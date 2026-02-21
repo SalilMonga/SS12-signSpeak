@@ -4,17 +4,22 @@ import CoreML
 import MediaPipeTasksVision
 
 // Handles: loading the .task model + running hand landmarks on a frame
+// Now adds: wrist-relative 126-vector + 16-frame ring buffer, JSON payload prep, CoreML run,
+// id2label mapping, and numerically-stable softmax for probability output.
 final class HandLandmarkerService: NSObject {
 
   private var landmarker: HandLandmarker?
-  // tiny wrapper around your CoreML model
-  private var modelRunner: TemporalHandNetRunner?
 
-  // one-off test: call this with any pixelBuffer to see if MediaPipe returns landmarks
-  func debugProcessOnce(pixelBuffer: CVPixelBuffer) {
-    let t = Int(Date().timeIntervalSince1970 * 1000)
-    process(pixelBuffer: pixelBuffer, timestampMs: t)
-  }
+  // ring buffer for last 16 frames (each frame -> [Float] length 126)
+  private var frameBuffer: [[Float]] = []
+  private let bufferSize = 16
+  private let bufferQueue = DispatchQueue(label: "hand.buffer.queue")
+
+  // model runner (failable initializer -> Optional)
+  private let modelRunner = TemporalHandNetRunner()
+
+  // label map (loads once)
+  private lazy var id2label: [Int: String] = loadId2Label()
 
   // Call this once on app start (or when user opens camera screen)
   func start() {
@@ -26,14 +31,8 @@ final class HandLandmarkerService: NSObject {
     do {
       let options = HandLandmarkerOptions()
       options.baseOptions.modelAssetPath = modelPath
-
-      // live stream mode = meant for camera frames
       options.runningMode = .liveStream
-
-      // tweak later if you want more hands
       options.numHands = 2
-
-      // callback gets results async per frame
       options.handLandmarkerLiveStreamDelegate = self
 
       landmarker = try HandLandmarker(options: options)
@@ -42,11 +41,8 @@ final class HandLandmarkerService: NSObject {
       print("Failed to create HandLandmarker:", error)
     }
 
-    // init the TemporalHandNet runner (optional; it's fine if this fails)
-    modelRunner = TemporalHandNetRunner()
-    if modelRunner == nil {
-      print("Warning: TemporalHandNetRunner failed to initialize (model class?)")
-    }
+    // just so we know labels are available
+    print("id2label loaded:", id2label)
   }
 
   /// Call this for each camera frame you want processed
@@ -55,56 +51,176 @@ final class HandLandmarkerService: NSObject {
 
     do {
       let mpImage = try MPImage(pixelBuffer: pixelBuffer)
-      // async result comes back in the delegate below
       try landmarker.detectAsync(image: mpImage, timestampInMilliseconds: timestampMs)
     } catch {
       print("detectAsync failed:", error)
     }
   }
 
-  // Takes ONE hand's landmarks and makes a 126-length feature vector.
-  // For now: [x,y,z] * 21 = 63 floats, then pad to 126 with zeros.
-  private func features126(from oneHand: [NormalizedLandmark]) -> [Float] {
-    var feats: [Float] = []
-    feats.reserveCapacity(126)
+  // MARK: - Feature building helpers
 
-    for lm in oneHand {
-      feats.append(Float(lm.x))
-      feats.append(Float(lm.y))
-      feats.append(Float(lm.z))
+  /// Convert one hand to 63 floats = (x,y,z)*21 after making them wrist-relative.
+  private func hand63_wristRelative(from landmarks: [NormalizedLandmark]) -> [Float] {
+    var out: [Float] = []
+    out.reserveCapacity(63)
+
+    guard landmarks.count >= 21 else {
+      return Array(repeating: 0.0, count: 63)
     }
 
-    // pad to 126 (temporary)
-    while feats.count < 126 {
-      feats.append(0)
-    }
+    let wrist = landmarks[0]
+    let wx = wrist.x
+    let wy = wrist.y
+    let wz = wrist.z
 
-    return feats
+    for lm in landmarks {
+      out.append(Float(lm.x - wx))
+      out.append(Float(lm.y - wy))
+      out.append(Float(lm.z - wz))
+    }
+    return out
   }
 
-  // Convert [Float] -> MLMultiArray(1,16,126). We'll flatten and put the 126 values
-  // in the first position (slice 0). The rest stays zero. Adjust later if your model
-  // expects a different layout.
-  private func makeModelInput(from feats: [Float]) -> MLMultiArray? {
+  /// Build 126-vector for a single frame:
+  /// [hand0(63 floats) , hand1(63 floats)]
+  /// hand ordering: leftmost wrist.x first. If missing a hand -> zeros.
+  private func build126(from result: HandLandmarkerResult) -> [Float] {
+    let hands = result.landmarks
+
+    guard hands.count > 0 else {
+      return Array(repeating: 0.0, count: 126)
+    }
+
+    var handWithWristX: [(idx: Int, wristX: Float)] = []
+    for (i, h) in hands.enumerated() {
+      let wx = (h.count > 0) ? Float(h[0].x) : 0
+      handWithWristX.append((idx: i, wristX: wx))
+    }
+
+    handWithWristX.sort { $0.wristX < $1.wristX }
+
+    var first63 = Array(repeating: Float(0.0), count: 63)
+    var second63 = Array(repeating: Float(0.0), count: 63)
+
+    if handWithWristX.count >= 1 {
+      first63 = hand63_wristRelative(from: hands[handWithWristX[0].idx])
+    }
+    if handWithWristX.count >= 2 {
+      second63 = hand63_wristRelative(from: hands[handWithWristX[1].idx])
+    }
+
+    return first63 + second63
+  }
+
+  /// Called when buffer reaches 16: build JSON payload and print its bytes
+  private func sendBufferPayload(timestampMs: Int) {
+    guard frameBuffer.count == bufferSize else { return }
+
+    let payload: [String: Any] = [
+      "t": timestampMs,
+      "x": frameBuffer
+    ]
+
+    if let data = try? JSONSerialization.data(withJSONObject: payload, options: []) {
+      print("prepared payload bytes =", data.count, "frames =", frameBuffer.count)
+    } else {
+      print("failed to serialize payload")
+    }
+  }
+
+  // MARK: - Labels
+
+  private func loadId2Label() -> [Int: String] {
+    guard let path = Bundle.main.path(forResource: "id2label", ofType: "json") else {
+      print("id2label.json not found in app bundle (defaulting to empty)")
+      return [:]
+    }
+
     do {
-      // shape matches earlier: [1, 16, 126]
-      let arr = try MLMultiArray(shape: [1, 16, 126], dataType: .float32)
+      let data = try Data(contentsOf: URL(fileURLWithPath: path))
+      let raw = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] ?? [:]
 
-      // zero-init to be safe
-      for i in 0..<arr.count {
-        arr[i] = 0
+      var map: [Int: String] = [:]
+      for (k, v) in raw {
+        if let idx = Int(k), let label = v as? String {
+          map[idx] = label
+        }
+      }
+      return map
+    } catch {
+      print("Failed to load id2label.json:", error)
+      return [:]
+    }
+  }
+
+  private func argmax(_ scores: [Float]) -> (index: Int, value: Float)? {
+    guard !scores.isEmpty else { return nil }
+    var bestI = 0
+    var bestV = scores[0]
+    for i in 1..<scores.count {
+      if scores[i] > bestV {
+        bestV = scores[i]
+        bestI = i
+      }
+    }
+    return (bestI, bestV)
+  }
+
+  // Convert logits -> probabilities (numerically stable softmax)
+  private func softmax(_ scores: [Float]) -> [Float] {
+    guard !scores.isEmpty else { return [] }
+
+    let maxScore = scores.max() ?? 0
+    let exps = scores.map { expf($0 - maxScore) }
+    let sumExp = exps.reduce(0, +)
+    guard sumExp > 0 else { return exps.map { _ in 0 } } // avoid div-by-zero
+
+    return exps.map { $0 / sumExp }
+  }
+
+  // MARK: - CoreML
+
+  // Turn [[Float]] (16 x 126) into MLMultiArray (1 x 16 x 126) and run CoreML.
+  private func runCoreML(on buffer16x126: [[Float]]) {
+    guard let runner = modelRunner else {
+      print("TemporalHandNetRunner not available")
+      return
+    }
+    guard buffer16x126.count == 16 else { return }
+    guard buffer16x126.allSatisfy({ $0.count == 126 }) else {
+      print("Bad buffer shape")
+      return
+    }
+
+    do {
+      let x = try MLMultiArray(shape: [1, 16, 126], dataType: .float32)
+
+      // fill in [b=0, t=0..15, f=0..125]
+      for t in 0..<16 {
+        for f in 0..<126 {
+          let idx = t * 126 + f
+          x[idx] = NSNumber(value: buffer16x126[t][f])
+        }
       }
 
-      // put our 126 floats into the first 126 elements
-      // (coreml uses contiguous storage; arr[i] index access is fine)
-      let setCount = min(feats.count, arr.count)
-      for i in 0..<setCount {
-        arr[i] = NSNumber(value: feats[i])
+      guard let scores = runner.predict(scoresInput: x) else {
+        print("CoreML predict failed")
+        return
       }
-      return arr
+
+      // print raw logits (debug)
+      print("CoreML scores:", scores)
+
+      // convert logits -> probs and print a 0..1 confidence for the best class
+      if let best = argmax(scores) {
+        let probs = softmax(scores)
+        let prob = probs.indices.contains(best.index) ? probs[best.index] : 0
+        let label = id2label[best.index] ?? "unknown(\(best.index))"
+        print(String(format: "Prediction -> %@ | prob: %.3f", label, prob))
+      }
+
     } catch {
       print("Failed to create MLMultiArray:", error)
-      return nil
     }
   }
 }
@@ -123,37 +239,28 @@ extension HandLandmarkerService: HandLandmarkerLiveStreamDelegate {
     }
     guard let result else { return }
 
-    // Print how many hands we saw (nice quick check)
     print("hands:", result.landmarks.count, "t=", timestampInMilliseconds)
 
-    // use the first detected hand for now
-    guard let firstHand = result.landmarks.first else { return }
+    let frame126 = build126(from: result)
 
-    // build 126 features
-    let f = features126(from: firstHand)
+    bufferQueue.async { [weak self] in
+      guard let self = self else { return }
 
-    // quick debug print
-    print("feat[0..2] =", f.prefix(3))
+      self.frameBuffer.append(frame126)
+      if self.frameBuffer.count > self.bufferSize {
+        self.frameBuffer.removeFirst(self.frameBuffer.count - self.bufferSize)
+      }
 
-    // run model prediction off the main thread (avoid blocking)
-    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-      guard let self else { return }
-      guard let input = self.makeModelInput(from: f) else { return }
-      guard let runner = self.modelRunner else { return }
+      if self.frameBuffer.count == self.bufferSize {
+        let snapshot = self.frameBuffer
+        let t = timestampInMilliseconds
 
-      if let scores = runner.predict(scoresInput: input) {
-        // example output — adapt to your model's semantics later
-        // print raw scores
-        print("Prediction -> raw scores:", scores)
-
-        // if you have id2label mapping, map argmax -> string and print confidence
-        if let bestIndex = scores.enumerated().max(by: { $0.element < $1.element })?.offset {
-          let bestScore = scores[bestIndex]
-          // If you have a label map, translate index->label name here
-          print("Prediction -> index \(bestIndex) | confidence: \(bestScore)")
+        // run model off this queue so we don't stall landmark processing
+        DispatchQueue.global(qos: .userInitiated).async {
+          self.runCoreML(on: snapshot)
         }
-      } else {
-        print("Model prediction failed")
+
+        self.sendBufferPayload(timestampMs: t)
       }
     }
   }
