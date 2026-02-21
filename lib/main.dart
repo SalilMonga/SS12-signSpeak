@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'dart:typed_data';
+import 'package:flutter/services.dart';
+
+const _mpChannel = MethodChannel('mediapipe_hands');
 
 late List<CameraDescription> _cameras;
 
@@ -47,27 +51,19 @@ class HomePage extends StatelessWidget {
             const SizedBox(height: 24),
             const Text(
               'Welcome to SignSpeak',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             const Text(
               'ASL Translator App',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
             const SizedBox(height: 48),
             ElevatedButton(
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const CameraPage(),
-                  ),
+                  MaterialPageRoute(builder: (context) => const CameraPage()),
                 );
               },
               child: const Text('Start Translating'),
@@ -111,10 +107,40 @@ class _CameraPageState extends State<CameraPage> {
       _cameras.first,
       ResolutionPreset.medium,
       enableAudio: false,
+      imageFormatGroup:
+          ImageFormatGroup.bgra8888, // <- important for iOS bridge
     );
 
     try {
       await controller.initialize();
+
+      // start streaming frames (we'll send them to iOS next step)
+      int _lastSentMs = 0;
+
+      await controller.startImageStream((CameraImage image) async {
+        final now = DateTime.now().millisecondsSinceEpoch;
+
+        // throttle a bit so we don't spam the bridge (10 fps-ish)
+        if (now - _lastSentMs < 100) return;
+        _lastSentMs = now;
+
+        // BGRA on iOS should be 1 plane
+        final Uint8List bytes = image.planes.first.bytes;
+
+        try {
+          await _mpChannel.invokeMethod('processFrameBGRA', {
+            'w': image.width,
+            'h': image.height,
+            'bytes': bytes,
+            't': now,
+            'bytesPerRow': image.planes.first.bytesPerRow,
+          });
+          print("sent frame -> iOS ✅");
+        } catch (e) {
+          print("processFrameBGRA failed ❌ $e");
+        }
+      });
+
       if (!mounted) return;
       setState(() {
         _controller = controller;
