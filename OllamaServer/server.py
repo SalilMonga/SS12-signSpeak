@@ -1,8 +1,18 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # be permissive for demo
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 
 class GenerateRequest(BaseModel):
@@ -10,7 +20,7 @@ class GenerateRequest(BaseModel):
 
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
-OLLAMA_MODEL = "llama3.2"
+OLLAMA_MODEL = "llama3"
 
 @app.get("/")
 def hello_world():
@@ -32,7 +42,14 @@ def generate_sentence(payload: GenerateRequest):
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Convert ASL gloss into one natural English sentence. Output only the sentence.",
+                        "content": (
+                                    "You are an ASL-to-English translator. "
+                                    "The user will send ASL gloss (UPPERCASE word sequences like 'I WANT WATER'). "
+                                    "Your task: convert the gloss into ONE natural English sentence.\n"
+                                    "- Output ONLY the sentence.\n"
+                                    "- No explanations, no quotes, no extra words.\n"
+                                    "- Fix grammar but keep the meaning."
+                                ),
                     },
                     {"role": "user", "content": f"ASL gloss: {asl}"},
                 ],
@@ -58,8 +75,15 @@ def generate_sentence(payload: GenerateRequest):
     if not message:
         raise HTTPException(status_code=502, detail="Ollama returned an empty message")
 
-    return {"sentence": message}
+    if message.startswith('"') and message.endswith('"'):
+        message = message[1:-1].strip()
+    if message.startswith("'") and message.endswith("'"):
+        message = message[1:-1].strip()
 
+    return {
+        "asl": asl,
+        "sentence": message,
+    }
 
 if __name__ == "__main__":
     import uvicorn
