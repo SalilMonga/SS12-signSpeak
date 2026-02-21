@@ -3,7 +3,29 @@
 *.log
 *.pyc
 *.swp
+
+# macOS (system files)
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.Icon?
+.AppleDouble
+.LSOverride
+
+# macOS (volume root)
+.fseventsd
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# macOS (AFP share)
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
 .atom/
 .build/
 .buildlog/
@@ -77,7 +99,7 @@ app.*.map.json
 **/ios/ServiceDefinitions.json
 **/ios/Runner/GeneratedPluginRegistrant.*
 
-# macOS
+# macOS (Flutter)
 **/macos/Flutter/GeneratedPluginRegistrant.swift
 **/macos/Flutter/ephemeral/
 
