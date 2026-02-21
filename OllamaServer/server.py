@@ -43,12 +43,16 @@ def generate_sentence(payload: GenerateRequest):
                     {
                         "role": "system",
                         "content": (
-                                    "You are an ASL-to-English translator. "
-                                    "The user will send ASL gloss (UPPERCASE word sequences like 'I WANT WATER'). "
-                                    "Your task: convert the gloss into ONE natural English sentence.\n"
-                                    "- Output ONLY the sentence.\n"
-                                    "- No explanations, no quotes, no extra words.\n"
-                                    "- Fix grammar but keep the meaning."
+                                    "You are an ASL gloss → English translator.\n"
+                                    "ASL gloss rules you MUST follow:\n"
+                                    "- ASL is topic-comment: the topic comes first (e.g., STORE I GO = I go to the store)\n"
+                                    "- When no subject is explicit, default to first person (I/me)\n"
+                                    "- IX-YOU / YOU = you, IX-ME / ME / I = I, IX-THEY / THEY = they\n"
+                                    "- Directional verbs encode subject/object: GIVE-YOU = I give you, YOU-GIVE = you give me\n"
+                                    "- Time signs come first: YESTERDAY I GO STORE = I went to the store yesterday\n"
+                                    "- FINISH = past tense, WILL = future tense\n"
+                                    "- Repeated signs = emphasis or plurality\n"
+                                    "Output ONLY one natural English sentence. No quotes, no explanation."
                                 ),
                     },
                     {"role": "user", "content": f"ASL gloss: {asl}"},
