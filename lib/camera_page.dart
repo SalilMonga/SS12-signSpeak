@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
+import 'test_page.dart';
 
 const _mpChannel = MethodChannel('mediapipe_hands');
 
@@ -584,6 +585,19 @@ class _BottomControlBarState extends State<_BottomControlBar> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HistoryPage()),
+              );
+            },
+          ),
+
+          // Test API
+          _BarIconLabel(
+            icon: Icons.science_outlined,
+            label: 'Test API',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TestPage()),
               );
             },
           ),
