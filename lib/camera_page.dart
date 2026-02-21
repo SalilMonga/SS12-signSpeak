@@ -4,6 +4,8 @@ import 'package:camera/camera.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
 
+const _mpChannel = MethodChannel('mediapipe_hands');
+
 const Color _kPrimaryBlue = Color(0xFF3B5BFE);
 
 // ---------------------------------------------------------------------------
@@ -54,10 +56,34 @@ class _CameraPageState extends State<CameraPage> {
       _cameras[_cameraIndex],
       ResolutionPreset.medium,
       enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.bgra8888, // required for iOS MediaPipe bridge
     );
 
     try {
       await controller.initialize();
+
+      // Stream camera frames to iOS native code for MediaPipe hand detection
+      int lastSentMs = 0;
+      await controller.startImageStream((CameraImage image) async {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        // Throttle to ~10 fps to avoid spamming the bridge
+        if (now - lastSentMs < 100) return;
+        lastSentMs = now;
+
+        final Uint8List bytes = image.planes.first.bytes;
+        try {
+          await _mpChannel.invokeMethod('processFrameBGRA', {
+            'w': image.width,
+            'h': image.height,
+            'bytes': bytes,
+            't': now,
+            'bytesPerRow': image.planes.first.bytesPerRow,
+          });
+        } catch (e) {
+          debugPrint("processFrameBGRA failed: $e");
+        }
+      });
+
       if (!mounted) return;
       final minZ = await controller.getMinZoomLevel();
       final maxZ = await controller.getMaxZoomLevel();
