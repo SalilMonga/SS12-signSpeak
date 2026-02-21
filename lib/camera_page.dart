@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
+import 'history_page.dart';
+import 'settings_page.dart';
 
 const Color _kPrimaryBlue = Color(0xFF3B5BFE);
 
@@ -22,6 +24,9 @@ class _CameraPageState extends State<CameraPage> {
   String _errorMessage = '';
   int _cameraIndex = 0;
   bool _flashOn = false;
+  double _currentZoom = 1.0;
+  double _minZoom = 1.0;
+  double _maxZoom = 1.0;
 
   @override
   void initState() {
@@ -54,9 +59,14 @@ class _CameraPageState extends State<CameraPage> {
     try {
       await controller.initialize();
       if (!mounted) return;
+      final minZ = await controller.getMinZoomLevel();
+      final maxZ = await controller.getMaxZoomLevel();
       setState(() {
         _controller = controller;
         _hasError = false;
+        _minZoom = minZ;
+        _maxZoom = maxZ;
+        _currentZoom = 1.0;
       });
     } on CameraException catch (e) {
       setState(() {
@@ -67,7 +77,15 @@ class _CameraPageState extends State<CameraPage> {
   }
 
   void _switchCamera() {
-    _cameraIndex = (_cameraIndex + 1) % _cameras.length;
+    HapticFeedback.lightImpact();
+    // Toggle between front and back only — pick the first camera with the
+    // opposite lens direction so we don't cycle through ultrawide/telephoto.
+    final currentDirection = _cameras[_cameraIndex].lensDirection;
+    final targetDirection = currentDirection == CameraLensDirection.front
+        ? CameraLensDirection.back
+        : CameraLensDirection.front;
+    final idx = _cameras.indexWhere((c) => c.lensDirection == targetDirection);
+    if (idx != -1) _cameraIndex = idx;
     _flashOn = false;
     _initCamera();
   }
@@ -78,6 +96,7 @@ class _CameraPageState extends State<CameraPage> {
 
   Future<void> _toggleFlash() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
+    HapticFeedback.lightImpact();
 
     if (_isFrontCamera) {
       // Front camera has no torch — toggle screen glow instead
@@ -93,6 +112,14 @@ class _CameraPageState extends State<CameraPage> {
       await _controller!.setFlashMode(newMode);
       setState(() => _flashOn = !_flashOn);
     }
+  }
+
+  Future<void> _setZoom(double level) async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    final clamped = level.clamp(_minZoom, _maxZoom);
+    await _controller!.setZoomLevel(clamped);
+    HapticFeedback.selectionClick();
+    setState(() => _currentZoom = clamped);
   }
 
   @override
@@ -183,6 +210,17 @@ class _CameraPageState extends State<CameraPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Zoom selector — back camera only
+                if (!_isFrontCamera)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _ZoomSelector(
+                      currentZoom: _currentZoom,
+                      minZoom: _minZoom,
+                      maxZoom: _maxZoom,
+                      onZoomSelected: _setZoom,
+                    ),
+                  ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 24),
                   child: _BottomControlBar(),
@@ -408,6 +446,78 @@ class _DetectionFramePainter extends CustomPainter {
 }
 
 // ---------------------------------------------------------------------------
+// _ZoomSelector — 0.5x / 1x / 2x pill toggle (back camera only)
+// ---------------------------------------------------------------------------
+
+class _ZoomSelector extends StatelessWidget {
+  final double currentZoom;
+  final double minZoom;
+  final double maxZoom;
+  final ValueChanged<double> onZoomSelected;
+
+  const _ZoomSelector({
+    required this.currentZoom,
+    required this.minZoom,
+    required this.maxZoom,
+    required this.onZoomSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <double>[0.5, 1.0, 2.0]
+        .where((z) => z >= minZoom && z <= maxZoom)
+        .toList();
+
+    // Always include 1.0 if the range covers it
+    if (!options.contains(1.0) && minZoom <= 1.0 && maxZoom >= 1.0) {
+      options.add(1.0);
+      options.sort();
+    }
+
+    if (options.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: options.map((zoom) {
+          final isSelected = (currentZoom - zoom).abs() < 0.05;
+          final label = zoom == 0.5
+              ? '.5x'
+              : '${zoom.toStringAsFixed(0)}x';
+          return GestureDetector(
+            onTap: () => onZoomSelected(zoom),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.white.withValues(alpha: 0.25)
+                    : Colors.transparent,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? _kPrimaryBlue : Colors.white,
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // _BottomControlBar — floating white pill with History / Speech On / Settings
 // ---------------------------------------------------------------------------
 
@@ -440,11 +550,24 @@ class _BottomControlBarState extends State<_BottomControlBar> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // History
-          _BarIconLabel(icon: Icons.history, label: 'History', onTap: () {}),
+          _BarIconLabel(
+            icon: Icons.history,
+            label: 'History',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const HistoryPage()),
+              );
+            },
+          ),
 
           // Speech toggle pill button
           GestureDetector(
-            onTap: () => setState(() => _speechOn = !_speechOn),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              setState(() => _speechOn = !_speechOn);
+            },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
@@ -475,7 +598,17 @@ class _BottomControlBarState extends State<_BottomControlBar> {
           ),
 
           // Settings
-          _BarIconLabel(icon: Icons.settings, label: 'Settings', onTap: () {}),
+          _BarIconLabel(
+            icon: Icons.settings,
+            label: 'Settings',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsPage()),
+              );
+            },
+          ),
         ],
       ),
     );
