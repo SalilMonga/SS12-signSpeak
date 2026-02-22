@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
+import 'api_service.dart';
 import 'history_page.dart';
+import 'main.dart' show serverIpNotifier;
 import 'settings_page.dart';
 
 const _mpChannel = MethodChannel('mediapipe_hands');
@@ -30,20 +32,33 @@ class _CameraPageState extends State<CameraPage> {
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
 
-  // 👇 NEW: live "best guess" coming from iOS
+  // Live "best guess" coming from iOS
   String _bestGuess = 'no hands detected';
   int _handsCount = 0;
   bool _paused = false;
+
+  // Ollama sentence generation
+  final ApiService _apiService = ApiService();
+  String _generatedSentence = '';
+  bool _generatingApi = false;
 
   @override
   void initState() {
     super.initState();
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
-    // 👇 NEW: listen for iOS -> Flutter updates
+    // Keep ApiService IP in sync with global setting
+    _apiService.updateIp(serverIpNotifier.value);
+    serverIpNotifier.addListener(_onServerIpChanged);
+
+    // Listen for iOS -> Flutter updates
     _mpChannel.setMethodCallHandler(_onNativeMessage);
 
     _initCamera();
+  }
+
+  void _onServerIpChanged() {
+    _apiService.updateIp(serverIpNotifier.value);
   }
 
   // Handle iOS -> Flutter callbacks
@@ -86,6 +101,38 @@ class _CameraPageState extends State<CameraPage> {
           _handsCount = c;
           if (c == 0) _bestGuess = 'no hands detected';
         });
+        return;
+
+      case 'onPhraseComplete':
+        final args = call.arguments;
+        List<String> words = [];
+        if (args is Map) {
+          final w = args['words'];
+          if (w is List) {
+            words = w.map((e) => e.toString()).toList();
+          }
+        }
+        if (words.isEmpty || !mounted) return;
+
+        setState(() {
+          _generatingApi = true;
+          _generatedSentence = '';
+        });
+
+        try {
+          final sentence = await _apiService.generateSentence(words);
+          if (!mounted) return;
+          setState(() {
+            _generatedSentence = sentence;
+            _generatingApi = false;
+          });
+        } catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _generatedSentence = 'Could not reach server';
+            _generatingApi = false;
+          });
+        }
         return;
 
       default:
@@ -250,8 +297,8 @@ class _CameraPageState extends State<CameraPage> {
 
   @override
   void dispose() {
+    serverIpNotifier.removeListener(_onServerIpChanged);
     _controller?.dispose();
-    // (optional) stop listening
     _mpChannel.setMethodCallHandler(null);
     super.dispose();
   }
@@ -301,12 +348,14 @@ class _CameraPageState extends State<CameraPage> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
                   maxHeight:
-                      200, // enough room for divider + hand-detected row
+                      240, // enough room for sentence + divider + hand-detected row
                 ),
                 child: _LiveTranslationCard(
                   bestGuess: _bestGuess,
                   handsCount: _handsCount,
                   paused: _paused,
+                  generatedSentence: _generatedSentence,
+                  generating: _generatingApi,
                 ),
               ),
             ),
@@ -417,11 +466,15 @@ class _LiveTranslationCard extends StatelessWidget {
   final String bestGuess;
   final int handsCount;
   final bool paused;
+  final String generatedSentence;
+  final bool generating;
 
   const _LiveTranslationCard({
     required this.bestGuess,
     required this.handsCount,
     this.paused = false,
+    this.generatedSentence = '',
+    this.generating = false,
   });
 
   @override
@@ -432,7 +485,9 @@ class _LiveTranslationCard extends StatelessWidget {
         bestGuess.isNotEmpty && bestGuess != 'no hands detected';
     final display = hasWord ? bestGuess : 'Hello, how can I help you today?';
 
-    // Status logic: paused > translating (got a word) > hands visible > idle
+    final bool hasSentence = generatedSentence.isNotEmpty;
+
+    // Status logic: paused > generating > translating (got a word) > hands visible > idle
     final Color statusDotColor;
     final String statusLabel;
     final bool animateDots;
@@ -440,6 +495,10 @@ class _LiveTranslationCard extends StatelessWidget {
       statusDotColor = Colors.orange;
       statusLabel = 'Paused';
       animateDots = false;
+    } else if (generating) {
+      statusDotColor = Colors.amber;
+      statusLabel = 'Generating';
+      animateDots = true;
     } else if (hasWord) {
       statusDotColor = Colors.green;
       statusLabel = 'Translating';
@@ -509,15 +568,50 @@ class _LiveTranslationCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          Text(
-            display,
-            style: TextStyle(
-              color: onSurface,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              height: 1.2,
+          // When a generated sentence exists, show current sign as a small label
+          if (hasSentence && hasWord) ...[
+            Text(
+              'Current sign: ${bestGuess.toUpperCase()}',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
+            const SizedBox(height: 4),
+          ],
+
+          // Main display: generated sentence (if available) or bestGuess
+          if (generating)
+            Row(
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _kPrimaryBlue),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Generating sentence...',
+                  style: TextStyle(
+                    color: onSurface,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            )
+          else
+            Text(
+              hasSentence ? generatedSentence : display,
+              style: TextStyle(
+                color: onSurface,
+                fontSize: hasSentence ? 22 : 24,
+                fontWeight: FontWeight.w800,
+                height: 1.2,
+              ),
+            ),
           const SizedBox(height: 10),
 
           const Divider(height: 1, thickness: 0.5),
