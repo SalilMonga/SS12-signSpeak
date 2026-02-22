@@ -109,7 +109,8 @@ class _CameraPageState extends State<CameraPage> {
       _cameras[_cameraIndex],
       ResolutionPreset.medium,
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.bgra8888, // required for iOS MediaPipe bridge
+      imageFormatGroup:
+          ImageFormatGroup.bgra8888, // required for iOS MediaPipe bridge
     );
 
     try {
@@ -170,7 +171,8 @@ class _CameraPageState extends State<CameraPage> {
   }
 
   bool get _isFrontCamera =>
-      _cameras.isNotEmpty && _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+      _cameras.isNotEmpty &&
+      _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
 
   Future<void> _toggleFlash() async {
     if (_controller == null) return;
@@ -179,7 +181,9 @@ class _CameraPageState extends State<CameraPage> {
     HapticFeedback.lightImpact();
     _flashOn = !_flashOn;
     try {
-      await _controller!.setFlashMode(_flashOn ? FlashMode.torch : FlashMode.off);
+      await _controller!.setFlashMode(
+        _flashOn ? FlashMode.torch : FlashMode.off,
+      );
       if (!mounted) return;
       setState(() {});
     } catch (_) {
@@ -209,10 +213,7 @@ class _CameraPageState extends State<CameraPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: _buildBody(context),
-    );
+    return Scaffold(backgroundColor: Colors.black, body: _buildBody(context));
   }
 
   Widget _buildBody(BuildContext context) {
@@ -254,7 +255,8 @@ class _CameraPageState extends State<CameraPage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
-                  maxHeight: 160, // 👈 tweak this number if you want it taller/shorter
+                  maxHeight:
+                      160, // 👈 tweak this number if you want it taller/shorter
                 ),
                 child: _LiveTranslationCard(
                   bestGuess: _bestGuess,
@@ -504,7 +506,10 @@ class _FlashButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(isOn ? Icons.flash_on : Icons.flash_off, color: Colors.white),
+              Icon(
+                isOn ? Icons.flash_on : Icons.flash_off,
+                color: Colors.white,
+              ),
               const SizedBox(width: 8),
               Text(
                 isOn ? 'Flash On' : 'Flash Off',
@@ -533,9 +538,11 @@ class _ZoomSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final options = <double>[0.5, 1.0, 2.0]
-        .where((z) => z >= minZoom && z <= maxZoom)
-        .toList();
+    final options = <double>[
+      0.5,
+      1.0,
+      2.0,
+    ].where((z) => z >= minZoom && z <= maxZoom).toList();
 
     if (!options.contains(1.0) && minZoom <= 1.0 && maxZoom >= 1.0) {
       options.add(1.0);
@@ -716,108 +723,6 @@ class _BarIconLabel extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _FlashButton — small circular button to toggle torch
-// ---------------------------------------------------------------------------
-
-class _FlashButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final bool isOn;
-  final bool isFrontCamera;
-
-  const _FlashButton({
-    required this.onPressed,
-    required this.isOn,
-    required this.isFrontCamera,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final IconData icon;
-    if (isFrontCamera) {
-      icon = isOn ? Icons.lightbulb : Icons.lightbulb_outline;
-    } else {
-      icon = isOn ? Icons.flash_on : Icons.flash_off;
-    }
-
-    return GestureDetector(
-      onTap: onPressed,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: isOn ? _kPrimaryBlue : Colors.grey.shade300,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 22,
-              color: isOn ? Colors.white : Colors.grey.shade800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            isOn ? 'On' : 'Off',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withValues(alpha: 0.85),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _CameraSwitchButton — small circular button below the control bar
-// ---------------------------------------------------------------------------
-
-class _CameraSwitchButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final bool isFront;
-
-  const _CameraSwitchButton({required this.onPressed, required this.isFront});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.cameraswitch,
-              size: 22,
-              color: Colors.grey.shade800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            isFront ? 'Front' : 'Back',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withValues(alpha: 0.85),
               fontWeight: FontWeight.w500,
             ),
           ),
