@@ -101,3 +101,5 @@ coverage/
 *.pem
 google-services.json
 GoogleService-Info.plist
+Podfile
+macos/Podfile
