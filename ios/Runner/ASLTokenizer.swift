@@ -13,6 +13,9 @@ import Foundation
 // enough, we end the phrase + POST it to FastAPI.
 final class ASLTokenizer {
 
+  // Called when a word passes stability checks and is accepted.
+  var onStableWord: ((String) -> Void)?
+
   // ====== Tweakables ======
   // how many consecutive updates must match before we accept the word
   private let stableFramesRequired: Int
@@ -91,6 +94,7 @@ final class ASLTokenizer {
         if !self.seen.contains(word) {
           self.words.append(word)
           self.seen.insert(word)
+          self.onStableWord?(word)
           print("Tokenizer ✅ added:", word, "->", self.words)
         } else {
           // seen before, ignore
@@ -126,15 +130,25 @@ final class ASLTokenizer {
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     req.httpBody = json
+    req.timeoutInterval = 3.0
 
     URLSession.shared.dataTask(with: req) { data, resp, err in
       if let err {
-        print("Tokenizer ❌ POST failed:", err)
+        let nsError = err as NSError
+        if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut {
+          print("Tokenizer ⏳ Waiting for hand... (backend timeout)")
+        } else {
+          print("Tokenizer ⚠️ Backend unavailable. Waiting for hand...")
+        }
         return
       }
 
       if let http = resp as? HTTPURLResponse {
-        print("Tokenizer ✅ POST status:", http.statusCode)
+        if (200...299).contains(http.statusCode) {
+          print("Tokenizer ✅ POST status:", http.statusCode)
+        } else {
+          print("Tokenizer ⚠️ Backend responded with status \(http.statusCode)")
+        }
       }
 
       // optional: print response body (helpful for debugging)
