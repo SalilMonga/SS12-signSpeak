@@ -103,6 +103,7 @@ app.*.map.json
 # macOS (Flutter)
 **/macos/Flutter/GeneratedPluginRegistrant.swift
 **/macos/Flutter/ephemeral/
+**/macos
 
 # Coverage
 coverage/
