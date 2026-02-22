@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'camera_page.dart';
 import 'speech_page.dart';
+import 'router_demo.dart';
 
 //testing audio
 Future<void> main() async {
@@ -19,7 +20,7 @@ class SignSpeakApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const CameraPage(),
+      home: const RouterDemo(),
       // const SpeechPage(), // !Need to integrate !
     );
   }
