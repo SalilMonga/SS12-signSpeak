@@ -67,7 +67,6 @@ import CoreVideo
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
-    // ✅ Get a messenger from the *actual* engine, via a registrar
     guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "mediapipe_hands") else {
       print("mediapipe_hands: registrar was nil (channel not registered)")
       return
@@ -81,8 +80,6 @@ import CoreVideo
 
       switch call.method {
       case "processFrameBGRA":
-        // print("iOS got frame ✅") // uncomment if you want to see spam
-
         guard
           let args = call.arguments as? [String: Any],
           let w = args["w"] as? Int,
