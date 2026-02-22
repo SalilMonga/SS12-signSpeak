@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'api_service.dart';
 import 'history_page.dart';
 import 'main.dart' show serverIpNotifier, offlineModeNotifier;
@@ -39,12 +40,15 @@ class _CameraPageState extends State<CameraPage> {
   bool _paused = false;
 
   final List<String> _wordBuffer =[];
-  // Ollama sentence generation
   // Sentence generation
   final ApiService _apiService = ApiService();
   final OfflineSentenceService _offlineService = OfflineSentenceService();
   String _generatedSentence = '';
   bool _generatingApi = false;
+
+  // TTS
+  late final FlutterTts _tts;
+  bool _speechOn = true;
 
   @override
   void initState() {
@@ -53,6 +57,10 @@ class _CameraPageState extends State<CameraPage> {
 
     // Load offline templates
     _offlineService.init();
+
+    // Init TTS (same config as SpeechPage)
+    _tts = FlutterTts();
+    _initTts();
 
     // Keep ApiService IP in sync with global setting
     _apiService.updateIp(serverIpNotifier.value);
@@ -66,6 +74,30 @@ class _CameraPageState extends State<CameraPage> {
 
   void _onServerIpChanged() {
     _apiService.updateIp(serverIpNotifier.value);
+  }
+
+  Future<void> _initTts() async {
+    await _tts.setSharedInstance(true);
+    await _tts.setIosAudioCategory(
+      IosTextToSpeechAudioCategory.playback,
+      [
+        IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+        IosTextToSpeechAudioCategoryOptions.allowAirPlay,
+        IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+      ],
+      IosTextToSpeechAudioMode.voicePrompt,
+    );
+    await _tts.setLanguage('en-US');
+    await _tts.setSpeechRate(0.5);
+    await _tts.setPitch(1.0);
+    await _tts.setVolume(1.0);
+  }
+
+  Future<void> _speakSentence(String sentence) async {
+    if (!_speechOn || sentence.isEmpty) return;
+    await _tts.stop();
+    await _tts.speak(sentence);
   }
 
   // Handle iOS -> Flutter callbacks
@@ -131,6 +163,7 @@ class _CameraPageState extends State<CameraPage> {
             _generatedSentence = sentence;
             _generatingApi = false;
           });
+          _speakSentence(sentence);
         } else {
           // Online: Ollama API (async)
           setState(() {
@@ -145,6 +178,7 @@ class _CameraPageState extends State<CameraPage> {
               _generatedSentence = sentence;
               _generatingApi = false;
             });
+            _speakSentence(sentence);
           } catch (e) {
             if (!mounted) return;
             setState(() {
@@ -317,6 +351,7 @@ class _CameraPageState extends State<CameraPage> {
 
   @override
   void dispose() {
+    _tts.stop();
     serverIpNotifier.removeListener(_onServerIpChanged);
     _controller?.dispose();
     _mpChannel.setMethodCallHandler(null);
@@ -396,6 +431,12 @@ class _CameraPageState extends State<CameraPage> {
                   _BottomControlBar(
                     onPause: _pauseForNavigation,
                     onResume: _resumeAfterNavigation,
+                    speechOn: _speechOn,
+                    onSpeechToggle: () {
+                      HapticFeedback.lightImpact();
+                      setState(() => _speechOn = !_speechOn);
+                      if (!_speechOn) _tts.stop();
+                    },
                   ),
                   const SizedBox(height: 12),
                   // Secondary row: Back (switch camera) + Off (flash)
@@ -806,18 +847,18 @@ class _ZoomSelector extends StatelessWidget {
 // _BottomControlBar — floating white pill with History / Speech On / Settings
 // ---------------------------------------------------------------------------
 
-class _BottomControlBar extends StatefulWidget {
+class _BottomControlBar extends StatelessWidget {
   final VoidCallback? onPause;
   final VoidCallback? onResume;
+  final bool speechOn;
+  final VoidCallback onSpeechToggle;
 
-  const _BottomControlBar({this.onPause, this.onResume});
-
-  @override
-  State<_BottomControlBar> createState() => _BottomControlBarState();
-}
-
-class _BottomControlBarState extends State<_BottomControlBar> {
-  bool _speechOn = true;
+  const _BottomControlBar({
+    this.onPause,
+    this.onResume,
+    required this.speechOn,
+    required this.onSpeechToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -843,39 +884,36 @@ class _BottomControlBarState extends State<_BottomControlBar> {
             label: 'History',
             onTap: () async {
               HapticFeedback.lightImpact();
-              widget.onPause?.call();
+              onPause?.call();
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HistoryPage()),
               );
-              widget.onResume?.call();
+              onResume?.call();
             },
           ),
           const SizedBox(width: 20),
 
           // Speech toggle pill button
           GestureDetector(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              setState(() => _speechOn = !_speechOn);
-            },
+            onTap: onSpeechToggle,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: _speechOn ? _kPrimaryBlue : Colors.grey.shade400,
+                color: speechOn ? _kPrimaryBlue : Colors.grey.shade400,
                 borderRadius: BorderRadius.circular(28),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    _speechOn ? Icons.volume_up : Icons.volume_off,
+                    speechOn ? Icons.volume_up : Icons.volume_off,
                     color: Colors.white,
                     size: 20,
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _speechOn ? 'SPEECH ON' : 'SPEECH OFF',
+                    speechOn ? 'SPEECH ON' : 'SPEECH OFF',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -895,12 +933,12 @@ class _BottomControlBarState extends State<_BottomControlBar> {
             label: 'Settings',
             onTap: () async {
               HapticFeedback.lightImpact();
-              widget.onPause?.call();
+              onPause?.call();
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SettingsPage()),
               );
-              widget.onResume?.call();
+              onResume?.call();
             },
           ),
         ],
