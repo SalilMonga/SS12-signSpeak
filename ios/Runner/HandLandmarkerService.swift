@@ -23,14 +23,18 @@ final class HandLandmarkerService: NSObject {
     
     private let tokenizer = ASLTokenizer(stableFramesRequired: 6, noHandsFramesToEnd: 12)
     
-    // iOS -> Flutter: we’ll call this every time we produce a word
+    // iOS -> Flutter: we'll call this every time we produce a word
     var onWord: ((String) -> Void)?
+
+    // iOS -> Flutter: called when the tokenizer completes a phrase
+    var onPhraseComplete: (([String]) -> Void)?
 
   // Call this once on app start (or when user opens camera screen)
   func start() {
       
-      tokenizer.onComplete = { words in
-        print("✅ READY TO SEND (not sending yet):", words)
+      tokenizer.onComplete = { [weak self] words in
+        print("✅ Phrase complete:", words)
+        self?.onPhraseComplete?(words)
       }
       
     guard let modelPath = Bundle.main.path(forResource: "hand_landmarker", ofType: "task") else {

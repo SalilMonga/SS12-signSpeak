@@ -82,6 +82,13 @@ import CoreVideo
         }
       }
 
+      // iOS -> Flutter: push completed phrase to Dart
+      handService.onPhraseComplete = { [weak self] words in
+        DispatchQueue.main.async {
+          self?.channel?.invokeMethod("onPhraseComplete", arguments: ["words": words])
+        }
+      }
+
     ch.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard let self else { return }
 

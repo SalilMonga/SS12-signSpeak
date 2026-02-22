@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'main.dart' show themeNotifier;
+import 'main.dart' show themeNotifier, serverIpNotifier;
 import 'test_page.dart';
 import 'speech_page.dart';
 
@@ -31,8 +31,23 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _useFrontCamera = false;
   String _resolution = 'Medium';
 
+  // Server
+  late final TextEditingController _serverIpController;
+
   // Appearance
   double _textSize = 1.0; // 0.0 = Small, 1.0 = Medium, 2.0 = Large
+
+  @override
+  void initState() {
+    super.initState();
+    _serverIpController = TextEditingController(text: serverIpNotifier.value);
+  }
+
+  @override
+  void dispose() {
+    _serverIpController.dispose();
+    super.dispose();
+  }
 
   static const List<String> _languages = [
     'English',
@@ -88,6 +103,29 @@ class _SettingsPageState extends State<SettingsPage> {
             _buildDarkModeToggle(),
             _buildDivider(),
             _buildTextSizeSlider(),
+          ]),
+
+          _buildSectionHeader('Server'),
+          _buildCard([
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: TextField(
+                controller: _serverIpController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Ollama Server IP',
+                  hintText: '10.40.3.166',
+                  prefixText: 'http://',
+                  suffixText: ':8000',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onChanged: (value) {
+                  serverIpNotifier.value = value.trim();
+                },
+              ),
+            ),
           ]),
 
           _buildSectionHeader('Developer'),
