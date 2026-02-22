@@ -12,7 +12,11 @@ final class HandLandmarkerService: NSObject {
 
   // Used to avoid spamming "no hands detected"
   private var wasNoHands: Bool = false
-
+    
+    // throttle "no hands" logging so it doesn't spam every frame
+    private var lastNoHandsLogMs: Int = 0
+    private let noHandsLogEveryMs: Int = 800   // tweak later (800ms feels nice)
+    
   // ring buffer for last 16 frames (each frame -> [Float] length 126)
   private var frameBuffer: [[Float]] = []
   private let bufferSize = 16
@@ -266,23 +270,28 @@ extension HandLandmarkerService: HandLandmarkerLiveStreamDelegate {
     }
     guard let result else { return }
 
-    // --- NO HANDS ---
-    if result.landmarks.isEmpty {
-      if !wasNoHands {
-        print("no hands detected")
+      // --- NO HANDS: log (throttled) + reset gate/tokenizer + clear buffer
+      if result.landmarks.isEmpty {
+        // log only on transition OR every ~800ms (prevents spam)
+        if !wasNoHands || (timestampInMilliseconds - lastNoHandsLogMs) >= noHandsLogEveryMs {
+          print("no hands detected")
+          lastNoHandsLogMs = timestampInMilliseconds
+        }
         wasNoHands = true
+
+        gate.resetForNoHands()
+        tokenizer.ingest(word: "no hands detected")
+        onWord?("no hands detected")
+
+        bufferQueue.async { [weak self] in
+          self?.frameBuffer.removeAll()
+        }
+
+        return
+      } else {
+        // hands came back, unlock the transition log next time
+        wasNoHands = false
       }
-
-      gate.resetForNoHands()
-      tokenizer.ingest(word: "no hands detected")
-      onWord?("no hands detected")
-
-      bufferQueue.async { [weak self] in
-        self?.frameBuffer.removeAll()
-      }
-
-      return
-    }
 
     // hands are back
     wasNoHands = false
