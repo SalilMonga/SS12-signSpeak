@@ -5,13 +5,19 @@ import 'camera_page.dart';
 import 'speech_page.dart';
 
 /// Global notifier so any page (e.g. SettingsPage) can toggle the theme.
-final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
 /// Global notifier for the Ollama server IP address.
 final ValueNotifier<String> serverIpNotifier = ValueNotifier('10.40.3.166');
 
 /// Global notifier for offline mode (local template router vs Ollama).
 final ValueNotifier<bool> offlineModeNotifier = ValueNotifier(false);
+
+/// Global notifier for speech on/off (synced between camera page & settings).
+final ValueNotifier<bool> speechOnNotifier = ValueNotifier(true);
+
+/// Global notifier for speech speed (0.0–1.0, default 0.5 = normal).
+final ValueNotifier<double> speechSpeedNotifier = ValueNotifier(0.5);
 
 /// Global sentence history (most recent first, max 30, persisted 24h).
 final sentenceHistory = SentenceHistory();
