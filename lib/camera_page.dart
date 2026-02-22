@@ -38,6 +38,8 @@ class _CameraPageState extends State<CameraPage> {
   int _handsCount = 0;
   bool _paused = false;
 
+  final List<String> _wordBuffer =[];
+  // Ollama sentence generation
   // Sentence generation
   final ApiService _apiService = ApiService();
   final OfflineSentenceService _offlineService = OfflineSentenceService();
@@ -76,7 +78,9 @@ class _CameraPageState extends State<CameraPage> {
         // expects: { "word": "apple" } OR just "apple"
         String next = 'no hands detected';
         final args = call.arguments;
+        setState(() => _bestGuess = next); //clear
 
+        
         if (args is String) {
           next = args;
         } else if (args is Map) {
