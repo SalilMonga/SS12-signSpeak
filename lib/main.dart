@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'camera_page.dart';
+import 'speech_page.dart';
 
+//testing audio
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const SignSpeakApp());
+ WidgetsFlutterBinding.ensureInitialized();
+ runApp(const SignSpeakApp()); //run the app on ios native 
 }
 
 class SignSpeakApp extends StatelessWidget {
@@ -18,6 +20,7 @@ class SignSpeakApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const CameraPage(),
+      // const SpeechPage(), // !Need to integrate !
     );
   }
 }
