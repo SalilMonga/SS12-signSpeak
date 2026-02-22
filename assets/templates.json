@@ -110,7 +110,7 @@
       "Yes, please help."
     ],
     "confirmNo": [
-      "No.",
+      "No {NOUN}",
       "No, thanks.",
       "No—thank you.",
       "No, that’s not right.",
