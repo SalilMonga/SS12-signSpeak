@@ -107,31 +107,41 @@ final class HandLandmarkerService: NSObject {
   }
 
   /// Build 126-vector for a single frame:
-  /// [hand0(63 floats) , hand1(63 floats)]
-  /// hand ordering: leftmost wrist.x first. If missing a hand -> zeros.
+  /// [left_hand(63 floats) , right_hand(63 floats)]
+  /// Uses MediaPipe handedness labels ("Left"/"Right") to assign slots,
+  /// with wrist-x fallback if label is unavailable. Matches Python pipeline.
   private func build126(from result: HandLandmarkerResult) -> [Float] {
     let hands = result.landmarks
     guard !hands.isEmpty else { return Array(repeating: 0.0, count: 126) }
 
-    // sort hands by wrist.x (leftmost first)
-    var handWithWristX: [(idx: Int, wristX: Float)] = []
-    for (i, h) in hands.enumerated() {
-      let wx = (h.count > 0) ? Float(h[0].x) : 0
-      handWithWristX.append((idx: i, wristX: wx))
-    }
-    handWithWristX.sort { $0.wristX < $1.wristX }
+    var left63 = Array(repeating: Float(0.0), count: 63)
+    var right63 = Array(repeating: Float(0.0), count: 63)
 
-    var first63 = Array(repeating: Float(0.0), count: 63)
-    var second63 = Array(repeating: Float(0.0), count: 63)
+    let handednessAll = result.handedness  // [[ResultCategory]] parallel to landmarks
 
-    if handWithWristX.count >= 1 {
-      first63 = hand63_wristRelative(from: hands[handWithWristX[0].idx])
-    }
-    if handWithWristX.count >= 2 {
-      second63 = hand63_wristRelative(from: hands[handWithWristX[1].idx])
+    for i in 0..<min(hands.count, 2) {
+      let vec = hand63_wristRelative(from: hands[i])
+
+      // Try to get the handedness label from MediaPipe classification
+      var label: String? = nil
+      if i < handednessAll.count, !handednessAll[i].isEmpty {
+        label = handednessAll[i][0].categoryName
+      }
+
+      // Fallback: use wrist x position (same as Python)
+      if label == nil {
+        let wristX = hands[i].count > 0 ? Float(hands[i][0].x) : 0.5
+        label = wristX < 0.5 ? "Left" : "Right"
+      }
+
+      if label?.lowercased().hasPrefix("l") == true {
+        left63 = vec
+      } else {
+        right63 = vec
+      }
     }
 
-    return first63 + second63
+    return left63 + right63
   }
 
   /// Called when buffer reaches 16: build JSON payload (kept for later networking)
