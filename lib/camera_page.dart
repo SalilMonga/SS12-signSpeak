@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'api_service.dart';
 import 'history_page.dart';
+import 'main.dart' show serverIpNotifier, offlineModeNotifier;
+import 'offline_sentence_service.dart';
 import 'settings_page.dart';
 
 const _mpChannel = MethodChannel('mediapipe_hands');
@@ -30,20 +34,70 @@ class _CameraPageState extends State<CameraPage> {
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
 
-  // 👇 NEW: live "best guess" coming from iOS
+  // Live "best guess" coming from iOS
   String _bestGuess = 'no hands detected';
   int _handsCount = 0;
   bool _paused = false;
+
+  final List<String> _wordBuffer =[];
+  // Sentence generation
+  final ApiService _apiService = ApiService();
+  final OfflineSentenceService _offlineService = OfflineSentenceService();
+  String _generatedSentence = '';
+  bool _generatingApi = false;
+
+  // TTS
+  late final FlutterTts _tts;
+  bool _speechOn = true;
 
   @override
   void initState() {
     super.initState();
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
-    // 👇 NEW: listen for iOS -> Flutter updates
+    // Load offline templates
+    _offlineService.init();
+
+    // Init TTS (same config as SpeechPage)
+    _tts = FlutterTts();
+    _initTts();
+
+    // Keep ApiService IP in sync with global setting
+    _apiService.updateIp(serverIpNotifier.value);
+    serverIpNotifier.addListener(_onServerIpChanged);
+
+    // Listen for iOS -> Flutter updates
     _mpChannel.setMethodCallHandler(_onNativeMessage);
 
     _initCamera();
+  }
+
+  void _onServerIpChanged() {
+    _apiService.updateIp(serverIpNotifier.value);
+  }
+
+  Future<void> _initTts() async {
+    await _tts.setSharedInstance(true);
+    await _tts.setIosAudioCategory(
+      IosTextToSpeechAudioCategory.playback,
+      [
+        IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+        IosTextToSpeechAudioCategoryOptions.allowAirPlay,
+        IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+      ],
+      IosTextToSpeechAudioMode.voicePrompt,
+    );
+    await _tts.setLanguage('en-US');
+    await _tts.setSpeechRate(0.5);
+    await _tts.setPitch(1.0);
+    await _tts.setVolume(1.0);
+  }
+
+  Future<void> _speakSentence(String sentence) async {
+    if (!_speechOn || sentence.isEmpty) return;
+    await _tts.stop();
+    await _tts.speak(sentence);
   }
 
   // Handle iOS -> Flutter callbacks
@@ -56,7 +110,9 @@ class _CameraPageState extends State<CameraPage> {
         // expects: { "word": "apple" } OR just "apple"
         String next = 'no hands detected';
         final args = call.arguments;
+        setState(() => _bestGuess = next); //clear
 
+        
         if (args is String) {
           next = args;
         } else if (args is Map) {
@@ -86,6 +142,51 @@ class _CameraPageState extends State<CameraPage> {
           _handsCount = c;
           if (c == 0) _bestGuess = 'no hands detected';
         });
+        return;
+
+      case 'onPhraseComplete':
+        final args = call.arguments;
+        List<String> words = [];
+        if (args is Map) {
+          final w = args['words'];
+          if (w is List) {
+            words = w.map((e) => e.toString()).toList();
+          }
+        }
+        if (words.isEmpty || !mounted) return;
+
+        if (offlineModeNotifier.value) {
+          // Offline: local template router (instant)
+          final sentence = _offlineService.generate(words);
+          if (!mounted) return;
+          setState(() {
+            _generatedSentence = sentence;
+            _generatingApi = false;
+          });
+          _speakSentence(sentence);
+        } else {
+          // Online: Ollama API (async)
+          setState(() {
+            _generatingApi = true;
+            _generatedSentence = '';
+          });
+
+          try {
+            final sentence = await _apiService.generateSentence(words);
+            if (!mounted) return;
+            setState(() {
+              _generatedSentence = sentence;
+              _generatingApi = false;
+            });
+            _speakSentence(sentence);
+          } catch (e) {
+            if (!mounted) return;
+            setState(() {
+              _generatedSentence = 'Could not reach server';
+              _generatingApi = false;
+            });
+          }
+        }
         return;
 
       default:
@@ -250,8 +351,9 @@ class _CameraPageState extends State<CameraPage> {
 
   @override
   void dispose() {
+    _tts.stop();
+    serverIpNotifier.removeListener(_onServerIpChanged);
     _controller?.dispose();
-    // (optional) stop listening
     _mpChannel.setMethodCallHandler(null);
     super.dispose();
   }
@@ -301,12 +403,14 @@ class _CameraPageState extends State<CameraPage> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
                   maxHeight:
-                      200, // enough room for divider + hand-detected row
+                      240, // enough room for sentence + divider + hand-detected row
                 ),
                 child: _LiveTranslationCard(
                   bestGuess: _bestGuess,
                   handsCount: _handsCount,
                   paused: _paused,
+                  generatedSentence: _generatedSentence,
+                  generating: _generatingApi,
                 ),
               ),
             ),
@@ -327,6 +431,12 @@ class _CameraPageState extends State<CameraPage> {
                   _BottomControlBar(
                     onPause: _pauseForNavigation,
                     onResume: _resumeAfterNavigation,
+                    speechOn: _speechOn,
+                    onSpeechToggle: () {
+                      HapticFeedback.lightImpact();
+                      setState(() => _speechOn = !_speechOn);
+                      if (!_speechOn) _tts.stop();
+                    },
                   ),
                   const SizedBox(height: 12),
                   // Secondary row: Back (switch camera) + Off (flash)
@@ -417,11 +527,15 @@ class _LiveTranslationCard extends StatelessWidget {
   final String bestGuess;
   final int handsCount;
   final bool paused;
+  final String generatedSentence;
+  final bool generating;
 
   const _LiveTranslationCard({
     required this.bestGuess,
     required this.handsCount,
     this.paused = false,
+    this.generatedSentence = '',
+    this.generating = false,
   });
 
   @override
@@ -432,7 +546,9 @@ class _LiveTranslationCard extends StatelessWidget {
         bestGuess.isNotEmpty && bestGuess != 'no hands detected';
     final display = hasWord ? bestGuess : 'Hello, how can I help you today?';
 
-    // Status logic: paused > translating (got a word) > hands visible > idle
+    final bool hasSentence = generatedSentence.isNotEmpty;
+
+    // Status logic: paused > generating > translating (got a word) > hands visible > idle
     final Color statusDotColor;
     final String statusLabel;
     final bool animateDots;
@@ -440,6 +556,10 @@ class _LiveTranslationCard extends StatelessWidget {
       statusDotColor = Colors.orange;
       statusLabel = 'Paused';
       animateDots = false;
+    } else if (generating) {
+      statusDotColor = Colors.amber;
+      statusLabel = 'Generating';
+      animateDots = true;
     } else if (hasWord) {
       statusDotColor = Colors.green;
       statusLabel = 'Translating';
@@ -485,6 +605,28 @@ class _LiveTranslationCard extends StatelessWidget {
                   letterSpacing: 1.2,
                 ),
               ),
+              const SizedBox(width: 8),
+              ValueListenableBuilder<bool>(
+                valueListenable: offlineModeNotifier,
+                builder: (context, offline, _) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: offline ? Colors.orange.withValues(alpha: 0.15) : Colors.green.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      offline ? 'OFFLINE' : 'ONLINE',
+                      style: TextStyle(
+                        color: offline ? Colors.orange : Colors.green,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  );
+                },
+              ),
               const Spacer(),
               Container(
                 width: 8,
@@ -509,15 +651,50 @@ class _LiveTranslationCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          Text(
-            display,
-            style: TextStyle(
-              color: onSurface,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              height: 1.2,
+          // When a generated sentence exists, show current sign as a small label
+          if (hasSentence && hasWord) ...[
+            Text(
+              'Current sign: ${bestGuess.toUpperCase()}',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
+            const SizedBox(height: 4),
+          ],
+
+          // Main display: generated sentence (if available) or bestGuess
+          if (generating)
+            Row(
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _kPrimaryBlue),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Generating sentence...',
+                  style: TextStyle(
+                    color: onSurface,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            )
+          else
+            Text(
+              hasSentence ? generatedSentence : display,
+              style: TextStyle(
+                color: onSurface,
+                fontSize: hasSentence ? 22 : 24,
+                fontWeight: FontWeight.w800,
+                height: 1.2,
+              ),
+            ),
           const SizedBox(height: 10),
 
           const Divider(height: 1, thickness: 0.5),
@@ -670,18 +847,18 @@ class _ZoomSelector extends StatelessWidget {
 // _BottomControlBar — floating white pill with History / Speech On / Settings
 // ---------------------------------------------------------------------------
 
-class _BottomControlBar extends StatefulWidget {
+class _BottomControlBar extends StatelessWidget {
   final VoidCallback? onPause;
   final VoidCallback? onResume;
+  final bool speechOn;
+  final VoidCallback onSpeechToggle;
 
-  const _BottomControlBar({this.onPause, this.onResume});
-
-  @override
-  State<_BottomControlBar> createState() => _BottomControlBarState();
-}
-
-class _BottomControlBarState extends State<_BottomControlBar> {
-  bool _speechOn = true;
+  const _BottomControlBar({
+    this.onPause,
+    this.onResume,
+    required this.speechOn,
+    required this.onSpeechToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -707,39 +884,36 @@ class _BottomControlBarState extends State<_BottomControlBar> {
             label: 'History',
             onTap: () async {
               HapticFeedback.lightImpact();
-              widget.onPause?.call();
+              onPause?.call();
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HistoryPage()),
               );
-              widget.onResume?.call();
+              onResume?.call();
             },
           ),
           const SizedBox(width: 20),
 
           // Speech toggle pill button
           GestureDetector(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              setState(() => _speechOn = !_speechOn);
-            },
+            onTap: onSpeechToggle,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: _speechOn ? _kPrimaryBlue : Colors.grey.shade400,
+                color: speechOn ? _kPrimaryBlue : Colors.grey.shade400,
                 borderRadius: BorderRadius.circular(28),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    _speechOn ? Icons.volume_up : Icons.volume_off,
+                    speechOn ? Icons.volume_up : Icons.volume_off,
                     color: Colors.white,
                     size: 20,
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _speechOn ? 'SPEECH ON' : 'SPEECH OFF',
+                    speechOn ? 'SPEECH ON' : 'SPEECH OFF',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -759,12 +933,12 @@ class _BottomControlBarState extends State<_BottomControlBar> {
             label: 'Settings',
             onTap: () async {
               HapticFeedback.lightImpact();
-              widget.onPause?.call();
+              onPause?.call();
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SettingsPage()),
               );
-              widget.onResume?.call();
+              onResume?.call();
             },
           ),
         ],

@@ -31,6 +31,34 @@ class _SpeechPageState extends State<SpeechPage> {
 
   Future<void> _initTts() async {
     _tts = FlutterTts();
+
+      //using a try-catch to debug that audio is sucessful without the ringer interfering.
+    try{
+      await _tts.setSharedInstance(true); // ensure TTS continues in background and isn't affected by ring/silent switch
+      await _tts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playback,
+        [
+          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker, // route audio to speaker by default
+          IosTextToSpeechAudioCategoryOptions.allowBluetooth, // allow routing to Bluetooth devices 
+        ], 
+        IosTextToSpeechAudioMode.defaultMode,
+      );
+      print("Audio category set successfully"); 
+    } catch(e){
+      print(" Audio error:$e");
+    }
+
+//problem: use playback audio so ring configuration doesn't affect it 
+    await _tts.setSharedInstance(true); 
+    await _tts.setIosAudioCategory(IosTextToSpeechAudioCategory.playback,
+    [ IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+      IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+      IosTextToSpeechAudioCategoryOptions.allowAirPlay,
+      IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+    ],
+    IosTextToSpeechAudioMode.voicePrompt,
+    );
+
     await _tts.setLanguage('en-US');
     await _tts.setSpeechRate(_speechRate);
     await _tts.setPitch(1.0);
@@ -59,6 +87,7 @@ class _SpeechPageState extends State<SpeechPage> {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
     FocusScope.of(context).unfocus(); // dismiss keyboard before speaking
+    await _tts.awaitSynthCompletion(true);
     await _tts.speak(text);
   }
 
@@ -284,7 +313,6 @@ class _SpeakButton extends StatelessWidget { // made it public to use in main.da
 // ---------------------------------------------------------------------------
 // _SpeedControl — slider: Slow / Normal / Fast
 // ---------------------------------------------------------------------------
-
 class _SpeedControl extends StatelessWidget {
   final double value;
   final ValueChanged<double> onChanged;

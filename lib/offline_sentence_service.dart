@@ -1,35 +1,18 @@
-import 'package:flutter/material.dart';
-import 'offline_sentence_service.dart';
+import 'asl_router.dart';
+import 'template_store.dart';
 
-class RouterDemo extends StatefulWidget {
-  const RouterDemo({super.key});
+class OfflineSentenceService {
+  late TemplateStore _store;
+  late ASLRouter _router;
+  bool _ready = false;
 
-  @override
-  State<RouterDemo> createState() => _RouterDemoState();
-}
+  bool get isReady => _ready;
 
-class _RouterDemoState extends State<RouterDemo> {
-  final OfflineSentenceService _service = OfflineSentenceService();
-  String _output = '';
+  Future<void> init() async {
+    _store = await TemplateStore.loadFromAsset('assets/templates.json');
 
-  final TextEditingController _controller =
-      TextEditingController(text: 'APPLE GET WANT');
-
-  @override
-  void initState() {
-    super.initState();
-    _service.init().then((_) {
-      if (mounted) setState(() {});
-      debugPrint('Templates initialized (Dart)');
-    });
-  }
-
-<<<<<<< HEAD
-  Future<void> _initTemplates() async {
-    store = await TemplateStore.loadFromAsset('assets/templates.json');
-
-    router = ASLRouter(
-      places: {
+    _router = ASLRouter(
+      places: const {
         'BATHROOM': 'the restroom',
         'RESTROOM': 'the restroom',
         'TOILET': 'the restroom',
@@ -37,8 +20,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'MEN': "the men's restroom",
         'WOMEN': "the women's restroom",
         'FAMILY': 'the family restroom',
-
-        // Entrances / exits / general areas
         'ENTRANCE': 'the entrance',
         'EXIT': 'the exit',
         'DOOR': 'the door',
@@ -51,16 +32,12 @@ class _RouterDemoState extends State<RouterDemo> {
         'BUILDING': 'the building',
         'FLOOR': 'this floor',
         'LEVEL': 'this level',
-
-        // Navigation / movement
         'ELEVATOR': 'the elevator',
         'LIFT': 'the elevator',
         'STAIRS': 'the stairs',
         'STAIR': 'the stairs',
         'ESCALATOR': 'the escalator',
         'RAMP': 'the ramp',
-
-        // Desks / help
         'FRONTDESK': 'the front desk',
         'FRONT-DESK': 'the front desk',
         'DESK': 'the front desk',
@@ -74,8 +51,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'CUSTOMERSERVICE': 'customer service',
         'CUSTOMER-SERVICE': 'customer service',
         'COMMUNITY': 'community',
-
-        // Airport / transit style
         'GATE': 'the gate',
         'TERMINAL': 'the terminal',
         'BAGGAGE': 'baggage claim',
@@ -85,8 +60,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'SECURITYCHECK': 'security screening',
         'SECURITY-CHECK': 'security screening',
         'TSA': 'security screening',
-
-        // Parking / transport
         'PARKING': 'parking',
         'GARAGE': 'the parking garage',
         'LOT': 'the parking lot',
@@ -96,8 +69,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'TRAINSTATION': 'the train station',
         'TRAIN-STATION': 'the train station',
         'SUBWAY': 'the subway station',
-
-        // Medical / services
         'CLINIC': 'the clinic',
         'HOSPITAL': 'the hospital',
         'PHARMACY': 'the pharmacy',
@@ -107,20 +78,15 @@ class _RouterDemoState extends State<RouterDemo> {
         'X-RAY': 'X-ray',
         'RADIOLOGY': 'radiology',
         'IMAGING': 'imaging',
-
-        // Food / amenities
         'CAFE': 'the cafe',
         'CAFETERIA': 'the cafeteria',
         'RESTAURANT': 'the restaurant',
         'FOODCOURT': 'the food court',
         'VENDING': 'the vending machines',
         'ATM': 'the ATM',
-
-        // Misc
         'LOSTFOUND': 'lost and found',
       },
-      nouns: {
-        // Food / drink
+      nouns: const {
         'APPLE': 'apple',
         'BANANA': 'banana',
         'ORANGE': 'orange',
@@ -134,11 +100,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'SNACK': 'a snack',
         'MEAL': 'a meal',
         'COMMUNITY': 'a community',
-        'DEAF': 'deaf',
-        'HAPPY': 'happy',
-        'CAMERA': 'camera',
-
-        // Tech / access
         'WIFI': 'Wi-Fi',
         'WI-FI': 'Wi-Fi',
         'INTERNET': 'internet',
@@ -155,8 +116,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'LAPTOP': 'my laptop',
         'COMPUTER': 'a computer',
         'TABLET': 'a tablet',
-
-        // Documents / payments
         'TICKET': 'a ticket',
         'PASS': 'a pass',
         'RESERVATION': 'a reservation',
@@ -178,8 +137,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'PRICE': 'the price',
         'COST': 'the cost',
         'FEE': 'a fee',
-
-        // Personal items
         'WALLET': 'my wallet',
         'BAG': 'my bag',
         'BACKPACK': 'my backpack',
@@ -188,8 +145,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'KEYS': 'my keys',
         'WATCH': 'my watch',
         'GLASSES': 'my glasses',
-
-        // Help / communication
         'HELP': 'help',
         'ASSIST': 'assistance',
         'ASSISTANCE': 'assistance',
@@ -198,8 +153,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'TRANSLATOR': 'a translator',
         'CAPTION': 'captions',
         'CAPTIONS': 'captions',
-
-        // Medical
         'DOCTOR': 'a doctor',
         'NURSE': 'a nurse',
         'MEDICINE': 'medicine',
@@ -209,8 +162,6 @@ class _RouterDemoState extends State<RouterDemo> {
         'HEADACHE': 'a headache',
         'NAUSEA': 'nausea',
         'ALLERGY': 'an allergy',
-
-        // Transport
         'RIDE': 'a ride',
         'TAXI': 'a taxi',
         'UBER': 'an Uber',
@@ -220,65 +171,21 @@ class _RouterDemoState extends State<RouterDemo> {
       },
     );
 
-    setState(() => _initialized = true);
-    debugPrint('Templates initialized (Dart)');
+    _ready = true;
   }
 
-  void _tokenizer(){
-=======
-  void _tokenizer() {
->>>>>>> dev
-    final tokens = _controller.text
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((w) => w.isNotEmpty)
-        .map((w) => w.toUpperCase())
-        .toList();
+  String generate(List<String> words) {
+    if (!_ready) return 'Offline service not ready';
 
-    final sentence = _service.generate(tokens);
-    setState(() => _output = sentence);
-    debugPrint('sentence=$sentence');
-  }
+    // Normalize to uppercase — iOS tokenizer sends lowercase
+    final upper = words.map((w) => w.toUpperCase()).toList();
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+    // Truncate to first 3 tokens — router works best with few tokens
+    final tokens = upper.length > 3 ? upper.sublist(0, 3) : upper;
 
-  @override
-  Widget build(BuildContext context) {
-    final ready = _service.isReady;
-    return Scaffold(
-      appBar: AppBar(title: const Text('ASL Router Demo')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(ready ? 'Templates ready' : 'Loading templates...'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _controller,
-              enabled: ready,
-              decoration: const InputDecoration(
-                labelText: 'Words (space-separated)',
-                hintText: 'e.g. WHERE BATHROOM',
-                border: OutlineInputBorder(),
-              ),
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _tokenizer(),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: ready ? _tokenizer : null,
-              child: const Text('Run'),
-            ),
-            const SizedBox(height: 12),
-            SelectableText(_output),
-          ],
-        ),
-      ),
-    );
+    final intentKey = _router.detectIntentKey(tokens);
+    final slots = _router.extractSlots(tokens, intentKey);
+    final template = _store.pickTemplate(intentKey, slots);
+    return renderTemplate(template, slots);
   }
 }

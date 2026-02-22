@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api_service.dart';
+import 'main.dart' show serverIpNotifier;
 
 const Color _kPrimaryBlue = Color(0xFF3B5BFE);
 
@@ -11,7 +12,7 @@ class TestPage extends StatefulWidget {
 }
 
 class _TestPageState extends State<TestPage> {
-  final _ipController = TextEditingController(text: '10.0.0.');
+  late final TextEditingController _ipController;
   final _customWordsController = TextEditingController();
   final _apiService = ApiService();
 
@@ -19,6 +20,12 @@ class _TestPageState extends State<TestPage> {
   String? _error;
   bool _loading = false;
   List<String> _selectedWords = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _ipController = TextEditingController(text: serverIpNotifier.value);
+  }
 
   static const List<List<String>> _presets = [
     ['I', 'WANT', 'APPLE'],
@@ -39,6 +46,7 @@ class _TestPageState extends State<TestPage> {
     }
 
     _apiService.updateIp(ip);
+    serverIpNotifier.value = ip;
     setState(() {
       _loading = true;
       _error = null;

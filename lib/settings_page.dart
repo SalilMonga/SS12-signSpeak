@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'main.dart' show themeNotifier;
+import 'main.dart' show themeNotifier, serverIpNotifier, offlineModeNotifier;
 import 'test_page.dart';
 import 'speech_page.dart';
+import 'Routerdemo.dart';
 
 const Color _kPrimaryBlue = Color(0xFF3B5BFE);
 
@@ -31,8 +32,23 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _useFrontCamera = false;
   String _resolution = 'Medium';
 
+  // Server
+  late final TextEditingController _serverIpController;
+
   // Appearance
   double _textSize = 1.0; // 0.0 = Small, 1.0 = Medium, 2.0 = Large
+
+  @override
+  void initState() {
+    super.initState();
+    _serverIpController = TextEditingController(text: serverIpNotifier.value);
+  }
+
+  @override
+  void dispose() {
+    _serverIpController.dispose();
+    super.dispose();
+  }
 
   static const List<String> _languages = [
     'English',
@@ -90,6 +106,52 @@ class _SettingsPageState extends State<SettingsPage> {
             _buildTextSizeSlider(),
           ]),
 
+          _buildSectionHeader('Server'),
+          _buildCard([
+            ValueListenableBuilder<bool>(
+              valueListenable: offlineModeNotifier,
+              builder: (context, offline, _) {
+                return Column(
+                  children: [
+                    SwitchListTile(
+                      title: const Text('Offline Mode'),
+                      subtitle: const Text('Uses local templates (no server needed)'),
+                      value: offline,
+                      activeTrackColor: _kPrimaryBlue,
+                      onChanged: (value) {
+                        HapticFeedback.lightImpact();
+                        setState(() {
+                          offlineModeNotifier.value = value;
+                        });
+                      },
+                    ),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: TextField(
+                        controller: _serverIpController,
+                        enabled: !offline,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: 'Ollama Server IP',
+                          hintText: '10.40.3.166',
+                          prefixText: 'http://',
+                          suffixText: ':8000',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onChanged: (value) {
+                          serverIpNotifier.value = value.trim();
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ]),
+
           _buildSectionHeader('Developer'),
           _buildCard([
             _buildActionTile('Test API', Icons.science_outlined, () {
@@ -105,6 +167,14 @@ class _SettingsPageState extends State<SettingsPage> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SpeechPage()),
+              );
+            }),
+            _buildDivider(),
+            _buildActionTile('Router Demo', Icons.route, () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RouterDemo()),
               );
             }),
           ]),
