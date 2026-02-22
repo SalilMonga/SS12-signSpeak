@@ -77,7 +77,6 @@ class _SpeechPageState extends State<SpeechPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
       appBar: AppBar( //
         title: const Text(
           'Text to Speech', // page title 
@@ -137,11 +136,11 @@ class _TextInputCard extends StatelessWidget {
   });
 
   @override
-  //UI textcard design 
-  Widget build(BuildContext context) { 
+  //UI textcard design
+  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -201,7 +200,6 @@ class _TextInputCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: Colors.black87,
               height: 1.4,
             ),
             decoration: InputDecoration(
@@ -300,11 +298,11 @@ class _SpeedControl extends StatelessWidget {
   }
 
   @override
-  //UI design for the speech speed controller 
+  //UI design for the speech speed controller
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -335,7 +333,6 @@ class _SpeedControl extends StatelessWidget {
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
-                  color: Colors.black87,
                 ),
               ),
             ],

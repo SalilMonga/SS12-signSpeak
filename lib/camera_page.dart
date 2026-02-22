@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
-import 'test_page.dart';
 
 const _mpChannel = MethodChannel('mediapipe_hands');
 
@@ -31,9 +30,10 @@ class _CameraPageState extends State<CameraPage> {
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
 
-  // 👇 NEW: live “best guess” coming from iOS
+  // 👇 NEW: live "best guess" coming from iOS
   String _bestGuess = 'no hands detected';
   int _handsCount = 0;
+  bool _paused = false;
 
   @override
   void initState() {
@@ -46,8 +46,11 @@ class _CameraPageState extends State<CameraPage> {
     _initCamera();
   }
 
-  // 👇 NEW: handle iOS callbacks
+  // Handle iOS -> Flutter callbacks
   Future<void> _onNativeMessage(MethodCall call) async {
+    // Drop all native messages while paused
+    if (_paused) return;
+
     switch (call.method) {
       case 'onWord':
         // expects: { "word": "apple" } OR just "apple"
@@ -109,33 +112,17 @@ class _CameraPageState extends State<CameraPage> {
       _cameras[_cameraIndex],
       ResolutionPreset.medium,
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.bgra8888, // required for iOS MediaPipe bridge
+      imageFormatGroup:
+          ImageFormatGroup.bgra8888, // required for iOS MediaPipe bridge
     );
 
     try {
       await controller.initialize();
 
-      // Stream camera frames to iOS native code for MediaPipe hand detection
-      int lastSentMs = 0;
-      await controller.startImageStream((CameraImage image) async {
-        final now = DateTime.now().millisecondsSinceEpoch;
-        // Throttle to ~10 fps to avoid spamming the bridge
-        if (now - lastSentMs < 100) return;
-        lastSentMs = now;
-
-        final Uint8List bytes = image.planes.first.bytes;
-        try {
-          await _mpChannel.invokeMethod('processFrameBGRA', {
-            'w': image.width,
-            'h': image.height,
-            'bytes': bytes,
-            't': now,
-            'bytesPerRow': image.planes.first.bytesPerRow,
-          });
-        } catch (e) {
-          debugPrint("processFrameBGRA failed: $e");
-        }
-      });
+      // Start streaming unless already paused
+      if (!_paused) {
+        await _startImageStream(controller);
+      }
 
       if (!mounted) return;
       final minZ = await controller.getMinZoomLevel();
@@ -169,8 +156,68 @@ class _CameraPageState extends State<CameraPage> {
     _initCamera();
   }
 
+  Future<void> _startImageStream(CameraController controller) async {
+    int lastSentMs = 0;
+    await controller.startImageStream((CameraImage image) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      // Throttle to ~10 fps to avoid spamming the bridge
+      if (now - lastSentMs < 100) return;
+      lastSentMs = now;
+
+      final Uint8List bytes = image.planes.first.bytes;
+      try {
+        await _mpChannel.invokeMethod('processFrameBGRA', {
+          'w': image.width,
+          'h': image.height,
+          'bytes': bytes,
+          't': now,
+          'bytesPerRow': image.planes.first.bytesPerRow,
+        });
+      } catch (e) {
+        debugPrint("processFrameBGRA failed: $e");
+      }
+    });
+  }
+
+  Future<void> _togglePause() async {
+    if (_controller == null) return;
+    HapticFeedback.lightImpact();
+
+    if (_paused) {
+      // Resume: restart the image stream
+      await _startImageStream(_controller!);
+      setState(() => _paused = false);
+    } else {
+      // Pause: stop the image stream entirely
+      await _controller!.stopImageStream();
+      setState(() => _paused = true);
+    }
+  }
+
+  // Track whether we were already manually paused before navigating away
+  bool _wasPausedBeforeNav = false;
+
+  void _pauseForNavigation() {
+    if (_controller == null) return;
+    _wasPausedBeforeNav = _paused;
+    if (!_paused) {
+      _controller!.stopImageStream();
+      setState(() => _paused = true);
+    }
+  }
+
+  void _resumeAfterNavigation() {
+    if (_controller == null || !mounted) return;
+    // Only resume if the user hadn't manually paused before navigating
+    if (!_wasPausedBeforeNav) {
+      _startImageStream(_controller!);
+      setState(() => _paused = false);
+    }
+  }
+
   bool get _isFrontCamera =>
-      _cameras.isNotEmpty && _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+      _cameras.isNotEmpty &&
+      _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
 
   Future<void> _toggleFlash() async {
     if (_controller == null) return;
@@ -179,7 +226,9 @@ class _CameraPageState extends State<CameraPage> {
     HapticFeedback.lightImpact();
     _flashOn = !_flashOn;
     try {
-      await _controller!.setFlashMode(_flashOn ? FlashMode.torch : FlashMode.off);
+      await _controller!.setFlashMode(
+        _flashOn ? FlashMode.torch : FlashMode.off,
+      );
       if (!mounted) return;
       setState(() {});
     } catch (_) {
@@ -209,10 +258,7 @@ class _CameraPageState extends State<CameraPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: _buildBody(context),
-    );
+    return Scaffold(backgroundColor: Colors.black, body: _buildBody(context));
   }
 
   Widget _buildBody(BuildContext context) {
@@ -254,50 +300,57 @@ class _CameraPageState extends State<CameraPage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
-                  maxHeight: 160, // 👈 tweak this number if you want it taller/shorter
+                  maxHeight:
+                      200, // enough room for divider + hand-detected row
                 ),
                 child: _LiveTranslationCard(
                   bestGuess: _bestGuess,
                   handsCount: _handsCount,
+                  paused: _paused,
                 ),
               ),
             ),
           ),
         ),
 
-        // Bottom controls (kept as-is)
+        // Bottom floating bar + secondary controls
         Align(
           alignment: Alignment.bottomCenter,
           child: SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _CircleIconButton(
-                    icon: Icons.history,
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const HistoryPage()),
-                      );
-                    },
+                  // White pill bar: History | Speech On | Settings
+                  _BottomControlBar(
+                    onPause: _pauseForNavigation,
+                    onResume: _resumeAfterNavigation,
                   ),
-                  const SizedBox(width: 20),
-                  _CircleIconButton(
-                    icon: Icons.cameraswitch,
-                    onPressed: _switchCamera,
-                  ),
-                  const SizedBox(width: 20),
-                  _CircleIconButton(
-                    icon: Icons.settings,
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SettingsPage()),
-                      );
-                    },
+                  const SizedBox(height: 12),
+                  // Secondary row: Back (switch camera) + Off (flash)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _SecondaryButton(
+                        icon: Icons.cameraswitch,
+                        label: 'Back',
+                        onPressed: _switchCamera,
+                      ),
+                      const SizedBox(width: 16),
+                      _SecondaryButton(
+                        icon: _paused ? Icons.play_arrow : Icons.pause,
+                        label: _paused ? 'Resume' : 'Pause',
+                        onPressed: _togglePause,
+                      ),
+                      const SizedBox(width: 16),
+                      _SecondaryButton(
+                        icon: _flashOn ? Icons.flash_on : Icons.flash_off,
+                        label: _flashOn ? 'On' : 'Off',
+                        onPressed: _isFrontCamera ? null : _toggleFlash,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -305,29 +358,22 @@ class _CameraPageState extends State<CameraPage> {
           ),
         ),
 
-        // Zoom selector (if back camera)
+        // Zoom selector (left edge, vertically centered)
         if (!_isFrontCamera)
           Positioned(
-            right: 16,
-            top: 160,
-            child: _ZoomSelector(
-              currentZoom: _currentZoom,
-              minZoom: _minZoom,
-              maxZoom: _maxZoom,
-              onZoomSelected: _setZoom,
+            left: 12,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _ZoomSelector(
+                currentZoom: _currentZoom,
+                minZoom: _minZoom,
+                maxZoom: _maxZoom,
+                onZoomSelected: _setZoom,
+              ),
             ),
           ),
 
-        // Flash toggle
-        Positioned(
-          left: 16,
-          bottom: 96,
-          child: _FlashButton(
-            onPressed: _toggleFlash,
-            isOn: _flashOn,
-            isFrontCamera: _isFrontCamera,
-          ),
-        ),
       ],
     );
   }
@@ -370,20 +416,50 @@ class _CameraPreview extends StatelessWidget {
 class _LiveTranslationCard extends StatelessWidget {
   final String bestGuess;
   final int handsCount;
+  final bool paused;
 
   const _LiveTranslationCard({
     required this.bestGuess,
     required this.handsCount,
+    this.paused = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final hasHands = handsCount > 0;
-    final display = bestGuess.isEmpty ? 'no hands detected' : bestGuess;
+    // A real word is anything other than the default placeholder
+    final hasWord =
+        bestGuess.isNotEmpty && bestGuess != 'no hands detected';
+    final display = hasWord ? bestGuess : 'Hello, how can I help you today?';
+
+    // Status logic: paused > translating (got a word) > hands visible > idle
+    final Color statusDotColor;
+    final String statusLabel;
+    final bool animateDots;
+    if (paused) {
+      statusDotColor = Colors.orange;
+      statusLabel = 'Paused';
+      animateDots = false;
+    } else if (hasWord) {
+      statusDotColor = Colors.green;
+      statusLabel = 'Translating';
+      animateDots = true;
+    } else if (hasHands) {
+      statusDotColor = _kPrimaryBlue;
+      statusLabel = 'Processing';
+      animateDots = true;
+    } else {
+      statusDotColor = Colors.grey.shade400;
+      statusLabel = 'Waiting';
+      animateDots = true;
+    }
+
+    final cardColor = Theme.of(context).cardColor;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -401,7 +477,7 @@ class _LiveTranslationCard extends StatelessWidget {
           Row(
             children: [
               const Text(
-                'LIVE GUESS',
+                'LIVE TRANSLATION',
                 style: TextStyle(
                   color: _kPrimaryBlue,
                   fontWeight: FontWeight.w800,
@@ -414,23 +490,29 @@ class _LiveTranslationCard extends StatelessWidget {
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: hasHands ? _kPrimaryBlue : Colors.grey.shade400,
+                  color: statusDotColor,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 6),
-              Text(
-                hasHands ? 'Seeing hands' : 'No hands',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-              ),
+              if (animateDots)
+                _AnimatedStatusText(
+                  label: statusLabel,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                )
+              else
+                Text(
+                  statusLabel,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                ),
             ],
           ),
           const SizedBox(height: 12),
 
           Text(
             display,
-            style: const TextStyle(
-              color: Colors.black87,
+            style: TextStyle(
+              color: onSurface,
               fontSize: 24,
               fontWeight: FontWeight.w800,
               height: 1.2,
@@ -438,81 +520,84 @@ class _LiveTranslationCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          Text(
-            hasHands ? 'hands: $handsCount' : 'show your hands to start',
-            style: TextStyle(
-              color: Colors.grey.shade700,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Buttons / controls (unchanged)
-// ---------------------------------------------------------------------------
-
-class _CircleIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  const _CircleIconButton({required this.icon, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.45),
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Icon(icon, color: Colors.white, size: 22),
-        ),
-      ),
-    );
-  }
-}
-
-class _FlashButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final bool isOn;
-  final bool isFrontCamera;
-
-  const _FlashButton({
-    required this.onPressed,
-    required this.isOn,
-    required this.isFrontCamera,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (isFrontCamera) return const SizedBox.shrink();
-    return Material(
-      color: Colors.black.withValues(alpha: 0.45),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+          const Divider(height: 1, thickness: 0.5),
+          const SizedBox(height: 10),
+          Row(
             children: [
-              Icon(isOn ? Icons.flash_on : Icons.flash_off, color: Colors.white),
-              const SizedBox(width: 8),
-              Text(
-                isOn ? 'Flash On' : 'Flash Off',
-                style: const TextStyle(color: Colors.white),
-              ),
+              if (hasWord) ...[
+                const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Hand detected',
+                  style: TextStyle(
+                    color: onSurface,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.green, width: 1.2),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text(
+                    'TRANSLATING',
+                    style: TextStyle(
+                      color: Colors.green,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ] else if (hasHands) ...[
+                Icon(Icons.check_circle, color: _kPrimaryBlue, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Hand detected',
+                  style: TextStyle(
+                    color: onSurface,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: _kPrimaryBlue, width: 1.2),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text(
+                    'DETECTED',
+                    style: TextStyle(
+                      color: _kPrimaryBlue,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ] else ...[
+                Icon(Icons.front_hand_outlined,
+                    color: Colors.grey.shade400, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Show your hands to start',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -533,9 +618,11 @@ class _ZoomSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final options = <double>[0.5, 1.0, 2.0]
-        .where((z) => z >= minZoom && z <= maxZoom)
-        .toList();
+    final options = <double>[
+      0.5,
+      1.0,
+      2.0,
+    ].where((z) => z >= minZoom && z <= maxZoom).toList();
 
     if (!options.contains(1.0) && minZoom <= 1.0 && maxZoom >= 1.0) {
       options.add(1.0);
@@ -584,7 +671,10 @@ class _ZoomSelector extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _BottomControlBar extends StatefulWidget {
-  const _BottomControlBar();
+  final VoidCallback? onPause;
+  final VoidCallback? onResume;
+
+  const _BottomControlBar({this.onPause, this.onResume});
 
   @override
   State<_BottomControlBar> createState() => _BottomControlBarState();
@@ -597,7 +687,7 @@ class _BottomControlBarState extends State<_BottomControlBar> {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
@@ -609,33 +699,23 @@ class _BottomControlBarState extends State<_BottomControlBar> {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // History
           _BarIconLabel(
             icon: Icons.history,
             label: 'History',
-            onTap: () {
+            onTap: () async {
               HapticFeedback.lightImpact();
-              Navigator.push(
+              widget.onPause?.call();
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HistoryPage()),
               );
+              widget.onResume?.call();
             },
           ),
-
-          // Test API
-          _BarIconLabel(
-            icon: Icons.science_outlined,
-            label: 'Test API',
-            onTap: () {
-              HapticFeedback.lightImpact();
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TestPage()),
-              );
-            },
-          ),
+          const SizedBox(width: 20),
 
           // Speech toggle pill button
           GestureDetector(
@@ -671,21 +751,120 @@ class _BottomControlBarState extends State<_BottomControlBar> {
               ),
             ),
           ),
+          const SizedBox(width: 20),
 
           // Settings
           _BarIconLabel(
             icon: Icons.settings,
             label: 'Settings',
-            onTap: () {
+            onTap: () async {
               HapticFeedback.lightImpact();
-              Navigator.push(
+              widget.onPause?.call();
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SettingsPage()),
               );
+              widget.onResume?.call();
             },
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SecondaryButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+
+  const _SecondaryButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (onPressed == null) return const SizedBox.shrink();
+    return GestureDetector(
+      onTap: onPressed,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade600,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 22),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _AnimatedStatusText — cycles dots: "Label.", "Label..", "Label..."
+// ---------------------------------------------------------------------------
+
+class _AnimatedStatusText extends StatefulWidget {
+  final String label;
+  final TextStyle style;
+
+  const _AnimatedStatusText({required this.label, required this.style});
+
+  @override
+  State<_AnimatedStatusText> createState() => _AnimatedStatusTextState();
+}
+
+class _AnimatedStatusTextState extends State<_AnimatedStatusText>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  int _dotCount = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+    _controller.addListener(_onTick);
+  }
+
+  void _onTick() {
+    final next = (_controller.value * 3).floor() + 1;
+    if (next != _dotCount) {
+      setState(() => _dotCount = next);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onTick);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dots = '.' * _dotCount;
+    final padded = dots.padRight(3);
+    return Text(
+      '${widget.label}$padded',
+      style: widget.style,
     );
   }
 }
@@ -703,121 +882,20 @@ class _BarIconLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final iconTextColor = Theme.of(context).colorScheme.onSurface;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 24, color: Colors.grey.shade700),
+          Icon(icon, size: 24, color: iconTextColor),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
               fontSize: 11,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _FlashButton — small circular button to toggle torch
-// ---------------------------------------------------------------------------
-
-class _FlashButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final bool isOn;
-  final bool isFrontCamera;
-
-  const _FlashButton({
-    required this.onPressed,
-    required this.isOn,
-    required this.isFrontCamera,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final IconData icon;
-    if (isFrontCamera) {
-      icon = isOn ? Icons.lightbulb : Icons.lightbulb_outline;
-    } else {
-      icon = isOn ? Icons.flash_on : Icons.flash_off;
-    }
-
-    return GestureDetector(
-      onTap: onPressed,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: isOn ? _kPrimaryBlue : Colors.grey.shade300,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 22,
-              color: isOn ? Colors.white : Colors.grey.shade800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            isOn ? 'On' : 'Off',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withValues(alpha: 0.85),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// _CameraSwitchButton — small circular button below the control bar
-// ---------------------------------------------------------------------------
-
-class _CameraSwitchButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final bool isFront;
-
-  const _CameraSwitchButton({required this.onPressed, required this.isFront});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.cameraswitch,
-              size: 22,
-              color: Colors.grey.shade800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            isFront ? 'Front' : 'Back',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withValues(alpha: 0.85),
+              color: iconTextColor,
               fontWeight: FontWeight.w500,
             ),
           ),
