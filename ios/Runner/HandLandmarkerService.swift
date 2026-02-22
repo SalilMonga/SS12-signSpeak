@@ -21,11 +21,18 @@ final class HandLandmarkerService: NSObject {
   // label map (loads once)
   private lazy var id2label: [Int: String] = loadId2Label()
     
+    private let tokenizer = ASLTokenizer(stableFramesRequired: 6, noHandsFramesToEnd: 12)
+    
     // iOS -> Flutter: we’ll call this every time we produce a word
     var onWord: ((String) -> Void)?
 
   // Call this once on app start (or when user opens camera screen)
   func start() {
+      
+      tokenizer.onComplete = { words in
+        print("✅ READY TO SEND (not sending yet):", words)
+      }
+      
     guard let modelPath = Bundle.main.path(forResource: "hand_landmarker", ofType: "task") else {
       print("hand_landmarker.task not found in app bundle")
       return
@@ -125,7 +132,7 @@ final class HandLandmarkerService: NSObject {
     ]
 
     if let data = try? JSONSerialization.data(withJSONObject: payload, options: []) {
-      print("prepared payload bytes =", data.count, "frames =", frameBuffer.count)
+      // print("prepared payload bytes =", data.count, "frames =", frameBuffer.count)
     } else {
       print("failed to serialize payload")
     }
@@ -212,7 +219,7 @@ final class HandLandmarkerService: NSObject {
       }
 
       // print raw logits (debug)
-      print("CoreML scores:", scores)
+      // print("CoreML scores:", scores)
 
       // convert logits -> probs and print a 0..1 confidence for the best class
       if let best = argmax(scores) {
@@ -221,6 +228,7 @@ final class HandLandmarkerService: NSObject {
         let label = id2label[best.index] ?? "unknown(\(best.index))"
         print(String(format: "Prediction -> %@ | prob: %.3f", label, prob))
           onWord?(label)
+          tokenizer.ingest(word: label)
       }
 
     } catch {
@@ -242,6 +250,13 @@ extension HandLandmarkerService: HandLandmarkerLiveStreamDelegate {
       return
     }
     guard let result else { return }
+      
+      // If no hands: feed tokenizer + keep UI consistent
+      if result.landmarks.isEmpty {
+        tokenizer.ingest(word: "no hands detected")
+        onWord?("no hands detected") // your existing UI callback
+        return
+      }
 
     print("hands:", result.landmarks.count, "t=", timestampInMilliseconds)
 
