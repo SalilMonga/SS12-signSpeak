@@ -28,7 +28,7 @@ final class ASLTokenizer {
 
   private var noHandsStreak: Int = 0
 
-  init(stableFramesRequired: Int = 6, noHandsFramesToEnd: Int = 3) {
+  init(stableFramesRequired: Int = 3, noHandsFramesToEnd: Int = 6) {
     self.stableFramesRequired = stableFramesRequired
     self.noHandsFramesToEnd = noHandsFramesToEnd
   }
