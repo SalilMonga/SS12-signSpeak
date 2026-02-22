@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'camera_page.dart';
 import 'speech_page.dart';
+import 'Routerdemo.dart';
 
 /// Global notifier so any page (e.g. SettingsPage) can toggle the theme.
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+
+/// Global notifier for the Ollama server IP address.
+final ValueNotifier<String> serverIpNotifier = ValueNotifier('10.40.3.166');
 
 //testing audio
 Future<void> main() async {
@@ -33,7 +37,7 @@ class SignSpeakApp extends StatelessWidget {
             useMaterial3: true,
           ),
           themeMode: currentMode,
-          home: const CameraPage(),
+          home: const RouterDemo(),
         );
       },
     );
