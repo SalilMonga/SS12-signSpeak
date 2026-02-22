@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'camera_page.dart';
 import 'speech_page.dart';
 
+/// Global notifier so any page (e.g. SettingsPage) can toggle the theme.
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+
 //testing audio
 Future<void> main() async {
  WidgetsFlutterBinding.ensureInitialized();
- runApp(const SignSpeakApp()); //run the app on ios native 
+ runApp(const SignSpeakApp()); //run the app on ios native
 }
 
 class SignSpeakApp extends StatelessWidget {
@@ -13,14 +16,26 @@ class SignSpeakApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SignSpeak - ASL Translator',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
-      home: const CameraPage(),
-      // const SpeechPage(), // !Need to integrate !
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, currentMode, _) {
+        return MaterialApp(
+          title: 'SignSpeak - ASL Translator',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+            useMaterial3: true,
+          ),
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.blue,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+          ),
+          themeMode: currentMode,
+          home: const CameraPage(),
+        );
+      },
     );
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'main.dart' show themeNotifier;
 import 'test_page.dart';
+import 'speech_page.dart';
 
 const Color _kPrimaryBlue = Color(0xFF3B5BFE);
 
@@ -30,7 +32,6 @@ class _SettingsPageState extends State<SettingsPage> {
   String _resolution = 'Medium';
 
   // Appearance
-  bool _darkMode = false;
   double _textSize = 1.0; // 0.0 = Small, 1.0 = Medium, 2.0 = Large
 
   static const List<String> _languages = [
@@ -49,7 +50,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
         title: const Text(
           'Settings',
@@ -97,6 +97,14 @@ class _SettingsPageState extends State<SettingsPage> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const TestPage()),
+              );
+            }),
+            _buildDivider(),
+            _buildActionTile('Text to Speech', Icons.record_voice_over, () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SpeechPage()),
               );
             }),
           ]),
@@ -150,7 +158,7 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -320,11 +328,13 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildDarkModeToggle() {
     return SwitchListTile(
       title: const Text('Dark Mode'),
-      value: _darkMode,
+      value: themeNotifier.value == ThemeMode.dark,
       activeTrackColor: _kPrimaryBlue,
       onChanged: (value) {
         HapticFeedback.lightImpact();
-        setState(() => _darkMode = value);
+        setState(() {
+          themeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
+        });
       },
     );
   }

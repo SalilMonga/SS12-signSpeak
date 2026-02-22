@@ -194,6 +194,27 @@ class _CameraPageState extends State<CameraPage> {
     }
   }
 
+  // Track whether we were already manually paused before navigating away
+  bool _wasPausedBeforeNav = false;
+
+  void _pauseForNavigation() {
+    if (_controller == null) return;
+    _wasPausedBeforeNav = _paused;
+    if (!_paused) {
+      _controller!.stopImageStream();
+      setState(() => _paused = true);
+    }
+  }
+
+  void _resumeAfterNavigation() {
+    if (_controller == null || !mounted) return;
+    // Only resume if the user hadn't manually paused before navigating
+    if (!_wasPausedBeforeNav) {
+      _startImageStream(_controller!);
+      setState(() => _paused = false);
+    }
+  }
+
   bool get _isFrontCamera =>
       _cameras.isNotEmpty &&
       _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
@@ -303,7 +324,10 @@ class _CameraPageState extends State<CameraPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // White pill bar: History | Speech On | Settings
-                  const _BottomControlBar(),
+                  _BottomControlBar(
+                    onPause: _pauseForNavigation,
+                    onResume: _resumeAfterNavigation,
+                  ),
                   const SizedBox(height: 12),
                   // Secondary row: Back (switch camera) + Off (flash)
                   Row(
@@ -430,9 +454,12 @@ class _LiveTranslationCard extends StatelessWidget {
       animateDots = true;
     }
 
+    final cardColor = Theme.of(context).cardColor;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -484,8 +511,8 @@ class _LiveTranslationCard extends StatelessWidget {
 
           Text(
             display,
-            style: const TextStyle(
-              color: Colors.black87,
+            style: TextStyle(
+              color: onSurface,
               fontSize: 24,
               fontWeight: FontWeight.w800,
               height: 1.2,
@@ -500,10 +527,10 @@ class _LiveTranslationCard extends StatelessWidget {
               if (hasWord) ...[
                 const Icon(Icons.check_circle, color: Colors.green, size: 20),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Hand detected',
                   style: TextStyle(
-                    color: Colors.black87,
+                    color: onSurface,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -529,10 +556,10 @@ class _LiveTranslationCard extends StatelessWidget {
               ] else if (hasHands) ...[
                 Icon(Icons.check_circle, color: _kPrimaryBlue, size: 20),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Hand detected',
                   style: TextStyle(
-                    color: Colors.black87,
+                    color: onSurface,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -644,7 +671,10 @@ class _ZoomSelector extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _BottomControlBar extends StatefulWidget {
-  const _BottomControlBar();
+  final VoidCallback? onPause;
+  final VoidCallback? onResume;
+
+  const _BottomControlBar({this.onPause, this.onResume});
 
   @override
   State<_BottomControlBar> createState() => _BottomControlBarState();
@@ -657,7 +687,7 @@ class _BottomControlBarState extends State<_BottomControlBar> {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(30),
         boxShadow: [
           BoxShadow(
@@ -675,12 +705,14 @@ class _BottomControlBarState extends State<_BottomControlBar> {
           _BarIconLabel(
             icon: Icons.history,
             label: 'History',
-            onTap: () {
+            onTap: () async {
               HapticFeedback.lightImpact();
-              Navigator.push(
+              widget.onPause?.call();
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HistoryPage()),
               );
+              widget.onResume?.call();
             },
           ),
           const SizedBox(width: 20),
@@ -725,12 +757,14 @@ class _BottomControlBarState extends State<_BottomControlBar> {
           _BarIconLabel(
             icon: Icons.settings,
             label: 'Settings',
-            onTap: () {
+            onTap: () async {
               HapticFeedback.lightImpact();
-              Navigator.push(
+              widget.onPause?.call();
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SettingsPage()),
               );
+              widget.onResume?.call();
             },
           ),
         ],
@@ -848,19 +882,20 @@ class _BarIconLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final iconTextColor = Theme.of(context).colorScheme.onSurface;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 24, color: Colors.grey.shade700),
+          Icon(icon, size: 24, color: iconTextColor),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
               fontSize: 11,
-              color: Colors.grey.shade700,
+              color: iconTextColor,
               fontWeight: FontWeight.w500,
             ),
           ),
