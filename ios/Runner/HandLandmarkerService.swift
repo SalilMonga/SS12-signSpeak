@@ -4,28 +4,62 @@ import CoreML
 import MediaPipeTasksVision
 
 // Handles: loading the .task model + running hand landmarks on a frame
-// Now adds: wrist-relative 126-vector + 16-frame ring buffer, JSON payload prep, CoreML run,
-// id2label mapping, and numerically-stable softmax for probability output.
+// Adds: wrist-relative 126-vector + 16-frame ring buffer, CoreML run,
+// id2label mapping, numerically-stable softmax, + gate/tokenizer wiring.
 final class HandLandmarkerService: NSObject {
 
   private var landmarker: HandLandmarker?
 
+  // Used to avoid spamming "no hands detected"
+  private var wasNoHands: Bool = false
+    
+    // throttle "no hands" logging so it doesn't spam every frame
+    private var lastNoHandsLogMs: Int = 0
+    private let noHandsLogEveryMs: Int = 800   // tweak later (800ms feels nice)
+    
   // ring buffer for last 16 frames (each frame -> [Float] length 126)
   private var frameBuffer: [[Float]] = []
   private let bufferSize = 16
   private let bufferQueue = DispatchQueue(label: "hand.buffer.queue")
 
-  // model runner (failable initializer -> Optional)
-  private let modelRunner = TemporalHandNetRunner()
+  // After each CoreML run, drop this many frames from the front of the buffer.
+  // This prevents running inference on every single frame (~30/s) and instead
+  // spaces predictions apart, reducing false positives from brief transitions.
+  // stride=4 at ~30fps → ~0.13s between predictions → stableN=4 needs ~0.5s of
+  // consistent predictions before acceptance.
+  private let inferenceStride = 3
+
+  // CoreML runner (optional in case model init fails)
+  private let modelRunner: TemporalHandNetRunner? = TemporalHandNetRunner()
+
+  // Gate logic (conf/margin/stable/cooldown/etc.)
+    private let gate = PredictionGate(
+      confThr: 0.65,
+      marginThr: 0.20,
+      stableN: 4,
+      cooldownS: 1.0,
+      minGapRepeatS: 1.5
+    )
+
+  // Tokenizer (phrase builder)
+  private let tokenizer = ASLTokenizer(stableFramesRequired: 1, noHandsFramesToEnd: 12)
 
   // label map (loads once)
   private lazy var id2label: [Int: String] = loadId2Label()
-    
-    // iOS -> Flutter: we’ll call this every time we produce a word
-    var onWord: ((String) -> Void)?
+
+  // iOS -> Flutter: called whenever we produce a word for UI
+  var onWord: ((String) -> Void)?
+
+  // iOS -> Flutter: called when tokenizer completes a phrase
+  var onPhraseComplete: (([String]) -> Void)?
 
   // Call this once on app start (or when user opens camera screen)
   func start() {
+    tokenizer.onComplete = { [weak self] words in
+      print("Tokenizer: 🧾 phrase COMPLETE =", words)
+      self?.onPhraseComplete?(words)
+    }
+
     guard let modelPath = Bundle.main.path(forResource: "hand_landmarker", ofType: "task") else {
       print("hand_landmarker.task not found in app bundle")
       return
@@ -43,9 +77,6 @@ final class HandLandmarkerService: NSObject {
     } catch {
       print("Failed to create HandLandmarker:", error)
     }
-
-    // just so we know labels are available
-    print("id2label loaded:", id2label)
   }
 
   /// Call this for each camera frame you want processed
@@ -64,12 +95,10 @@ final class HandLandmarkerService: NSObject {
 
   /// Convert one hand to 63 floats = (x,y,z)*21 after making them wrist-relative.
   private func hand63_wristRelative(from landmarks: [NormalizedLandmark]) -> [Float] {
+    guard landmarks.count >= 21 else { return Array(repeating: 0.0, count: 63) }
+
     var out: [Float] = []
     out.reserveCapacity(63)
-
-    guard landmarks.count >= 21 else {
-      return Array(repeating: 0.0, count: 63)
-    }
 
     let wrist = landmarks[0]
     let wx = wrist.x
@@ -85,37 +114,50 @@ final class HandLandmarkerService: NSObject {
   }
 
   /// Build 126-vector for a single frame:
-  /// [hand0(63 floats) , hand1(63 floats)]
-  /// hand ordering: leftmost wrist.x first. If missing a hand -> zeros.
+  /// [left_hand(63 floats) , right_hand(63 floats)]
+  /// Uses MediaPipe handedness labels ("Left"/"Right") to assign slots.
+  /// IMPORTANT: The front camera mirrors the image, so MediaPipe's labels
+  /// are inverted (it calls your actual left hand "Right" and vice versa).
+  /// We flip the assignment to match the Python pipeline (unmirrored webcam).
   private func build126(from result: HandLandmarkerResult) -> [Float] {
     let hands = result.landmarks
+    guard !hands.isEmpty else { return Array(repeating: 0.0, count: 126) }
 
-    guard hands.count > 0 else {
-      return Array(repeating: 0.0, count: 126)
+    var left63 = Array(repeating: Float(0.0), count: 63)
+    var right63 = Array(repeating: Float(0.0), count: 63)
+
+    let handednessAll = result.handedness  // [[ResultCategory]] parallel to landmarks
+
+    for i in 0..<min(hands.count, 2) {
+      let vec = hand63_wristRelative(from: hands[i])
+
+      // Get the handedness label from MediaPipe classification
+      var label: String? = nil
+      if i < handednessAll.count, !handednessAll[i].isEmpty {
+        label = handednessAll[i][0].categoryName
+      }
+
+      // Fallback: use wrist x position
+      if label == nil {
+        let wristX = hands[i].count > 0 ? Float(hands[i][0].x) : 0.5
+        label = wristX < 0.5 ? "Left" : "Right"
+      }
+
+      // Front camera mirrors the image, so MediaPipe's labels are flipped:
+      // MediaPipe "Left" = your actual RIGHT hand, "Right" = your actual LEFT hand.
+      // Invert the assignment so slots match the Python pipeline.
+      let isLeftLabel = label?.lowercased().hasPrefix("l") == true
+      if isLeftLabel {
+        right63 = vec   // MediaPipe "Left" on mirrored image → actual right hand
+      } else {
+        left63 = vec    // MediaPipe "Right" on mirrored image → actual left hand
+      }
     }
 
-    var handWithWristX: [(idx: Int, wristX: Float)] = []
-    for (i, h) in hands.enumerated() {
-      let wx = (h.count > 0) ? Float(h[0].x) : 0
-      handWithWristX.append((idx: i, wristX: wx))
-    }
-
-    handWithWristX.sort { $0.wristX < $1.wristX }
-
-    var first63 = Array(repeating: Float(0.0), count: 63)
-    var second63 = Array(repeating: Float(0.0), count: 63)
-
-    if handWithWristX.count >= 1 {
-      first63 = hand63_wristRelative(from: hands[handWithWristX[0].idx])
-    }
-    if handWithWristX.count >= 2 {
-      second63 = hand63_wristRelative(from: hands[handWithWristX[1].idx])
-    }
-
-    return first63 + second63
+    return left63 + right63
   }
 
-  /// Called when buffer reaches 16: build JSON payload and print its bytes
+  /// Called when buffer reaches 16: build JSON payload (kept for later networking)
   private func sendBufferPayload(timestampMs: Int) {
     guard frameBuffer.count == bufferSize else { return }
 
@@ -125,7 +167,8 @@ final class HandLandmarkerService: NSObject {
     ]
 
     if let data = try? JSONSerialization.data(withJSONObject: payload, options: []) {
-      print("prepared payload bytes =", data.count, "frames =", frameBuffer.count)
+      _ = data
+      // (no log)
     } else {
       print("failed to serialize payload")
     }
@@ -156,19 +199,6 @@ final class HandLandmarkerService: NSObject {
     }
   }
 
-  private func argmax(_ scores: [Float]) -> (index: Int, value: Float)? {
-    guard !scores.isEmpty else { return nil }
-    var bestI = 0
-    var bestV = scores[0]
-    for i in 1..<scores.count {
-      if scores[i] > bestV {
-        bestV = scores[i]
-        bestI = i
-      }
-    }
-    return (bestI, bestV)
-  }
-
   // Convert logits -> probabilities (numerically stable softmax)
   private func softmax(_ scores: [Float]) -> [Float] {
     guard !scores.isEmpty else { return [] }
@@ -176,14 +206,35 @@ final class HandLandmarkerService: NSObject {
     let maxScore = scores.max() ?? 0
     let exps = scores.map { expf($0 - maxScore) }
     let sumExp = exps.reduce(0, +)
-    guard sumExp > 0 else { return exps.map { _ in 0 } } // avoid div-by-zero
+    guard sumExp > 0 else { return exps.map { _ in 0 } }
 
     return exps.map { $0 / sumExp }
   }
 
+  private func top2(from probs: [Float]) -> (i1: Int, p1: Float, i2: Int, p2: Float)? {
+    guard probs.count >= 2 else { return nil }
+
+    var best1 = (idx: 0, p: probs[0])
+    var best2 = (idx: 1, p: probs[1])
+    if best2.p > best1.p { swap(&best1, &best2) }
+
+    if probs.count > 2 {
+      for i in 2..<probs.count {
+        let p = probs[i]
+        if p > best1.p {
+          best2 = best1
+          best1 = (i, p)
+        } else if p > best2.p {
+          best2 = (i, p)
+        }
+      }
+    }
+    return (best1.idx, best1.p, best2.idx, best2.p)
+  }
+
   // MARK: - CoreML
 
-  // Turn [[Float]] (16 x 126) into MLMultiArray (1 x 16 x 126) and run CoreML.
+  /// Turn [[Float]] (16 x 126) into MLMultiArray (1 x 16 x 126) and run CoreML.
   private func runCoreML(on buffer16x126: [[Float]]) {
     guard let runner = modelRunner else {
       print("TemporalHandNetRunner not available")
@@ -198,7 +249,6 @@ final class HandLandmarkerService: NSObject {
     do {
       let x = try MLMultiArray(shape: [1, 16, 126], dataType: .float32)
 
-      // fill in [b=0, t=0..15, f=0..125]
       for t in 0..<16 {
         for f in 0..<126 {
           let idx = t * 126 + f
@@ -206,21 +256,28 @@ final class HandLandmarkerService: NSObject {
         }
       }
 
-      guard let scores = runner.predict(scoresInput: x) else {
+      guard let logits = runner.predict(scoresInput: x) else {
         print("CoreML predict failed")
         return
       }
 
-      // print raw logits (debug)
-      print("CoreML scores:", scores)
+      let probs = softmax(logits)
+      guard let t2 = top2(from: probs) else { return }
 
-      // convert logits -> probs and print a 0..1 confidence for the best class
-      if let best = argmax(scores) {
-        let probs = softmax(scores)
-        let prob = probs.indices.contains(best.index) ? probs[best.index] : 0
-        let label = id2label[best.index] ?? "unknown(\(best.index))"
-        print(String(format: "Prediction -> %@ | prob: %.3f", label, prob))
-          onWord?(label)
+      let top1Label = id2label[t2.i1] ?? "unknown(\(t2.i1))"
+      let top1Prob = t2.p1
+      let top2Prob = t2.p2
+
+      if let accepted = gate.ingest(top1Word: top1Label, top1Prob: top1Prob, top2Prob: top2Prob) {
+        tokenizer.ingest(word: accepted)
+        onWord?(accepted)
+
+        // Clear buffer after acceptance so next prediction uses only fresh
+        // post-transition frames — prevents detecting intermediate signs
+        // (e.g. DEAF between LOOK_AT → CAMERA) from leftover frames.
+        bufferQueue.async { [weak self] in
+          self?.frameBuffer.removeAll()
+        }
       }
 
     } catch {
@@ -243,7 +300,34 @@ extension HandLandmarkerService: HandLandmarkerLiveStreamDelegate {
     }
     guard let result else { return }
 
-    print("hands:", result.landmarks.count, "t=", timestampInMilliseconds)
+      // --- NO HANDS: log (throttled) + reset gate/tokenizer + clear buffer
+      if result.landmarks.isEmpty {
+        // log only on transition OR every ~800ms (prevents spam)
+        if !wasNoHands || (timestampInMilliseconds - lastNoHandsLogMs) >= noHandsLogEveryMs {
+          print("no hands detected")
+          lastNoHandsLogMs = timestampInMilliseconds
+        }
+        wasNoHands = true
+
+        gate.resetForNoHands()
+        tokenizer.ingest(word: "no hands detected")
+        onWord?("no hands detected")
+
+        bufferQueue.async { [weak self] in
+          self?.frameBuffer.removeAll()
+        }
+
+        return
+      } else {
+        // hands came back, unlock the transition log next time
+        wasNoHands = false
+      }
+
+    // hands are back
+    wasNoHands = false
+
+    // (optional) spammy — keep off
+    // print("hands:", result.landmarks.count, "t=", timestampInMilliseconds)
 
     let frame126 = build126(from: result)
 
@@ -259,7 +343,10 @@ extension HandLandmarkerService: HandLandmarkerLiveStreamDelegate {
         let snapshot = self.frameBuffer
         let t = timestampInMilliseconds
 
-        // run model off this queue so we don't stall landmark processing
+        // Stride: drop oldest N frames so we need N more before the next run.
+        // This spaces out predictions instead of running on every single frame.
+        self.frameBuffer.removeFirst(self.inferenceStride)
+
         DispatchQueue.global(qos: .userInitiated).async {
           self.runCoreML(on: snapshot)
         }
