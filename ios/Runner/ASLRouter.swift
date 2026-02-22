@@ -95,7 +95,7 @@ final class ASLRouter {
     "GATE": "the gate", "TERMINAL": "the terminal", "BAGGAGE": "baggage claim",
     "BAGGAGECLAIM": "baggage claim", "BAGGAGE-CLAIM": "baggage claim",
     "TSA": "security screening", "SECURITYCHECK": "security screening", "SECURITY-CHECK": "security screening",
-    "WORLD": "the world"
+    "WORLD": "the world",
 
     // Food / amenities
     "CAFE": "the cafe", "CAFETERIA": "the cafeteria", "RESTAURANT": "the restaurant",
@@ -127,7 +127,7 @@ final class ASLRouter {
     "PHONE": "my phone", "CELL": "my phone", "MOBILE": "my phone",
     "LAPTOP": "my laptop", "COMPUTER": "a computer", "TABLET": "a tablet",
     "APP": "the app", "EMAIL": "email", "TEXT": "a text message", 
-    "KEYS": "keys", "ROCK": "rock"
+    "KEYS": "keys", "ROCK": "rock",
 
     // Admin / docs / payments
     "TICKET": "a ticket", "PASS": "a pass", "RESERVATION": "a reservation",
