@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'api_service.dart';
 import 'history_page.dart';
-import 'main.dart' show serverIpNotifier;
+import 'main.dart' show serverIpNotifier, offlineModeNotifier;
+import 'offline_sentence_service.dart';
 import 'settings_page.dart';
 
 const _mpChannel = MethodChannel('mediapipe_hands');
@@ -39,7 +40,9 @@ class _CameraPageState extends State<CameraPage> {
 
   final List<String> _wordBuffer =[];
   // Ollama sentence generation
+  // Sentence generation
   final ApiService _apiService = ApiService();
+  final OfflineSentenceService _offlineService = OfflineSentenceService();
   String _generatedSentence = '';
   bool _generatingApi = false;
 
@@ -47,6 +50,9 @@ class _CameraPageState extends State<CameraPage> {
   void initState() {
     super.initState();
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
+
+    // Load offline templates
+    _offlineService.init();
 
     // Keep ApiService IP in sync with global setting
     _apiService.updateIp(serverIpNotifier.value);
@@ -117,24 +123,35 @@ class _CameraPageState extends State<CameraPage> {
         }
         if (words.isEmpty || !mounted) return;
 
-        setState(() {
-          _generatingApi = true;
-          _generatedSentence = '';
-        });
-
-        try {
-          final sentence = await _apiService.generateSentence(words);
+        if (offlineModeNotifier.value) {
+          // Offline: local template router (instant)
+          final sentence = _offlineService.generate(words);
           if (!mounted) return;
           setState(() {
             _generatedSentence = sentence;
             _generatingApi = false;
           });
-        } catch (e) {
-          if (!mounted) return;
+        } else {
+          // Online: Ollama API (async)
           setState(() {
-            _generatedSentence = 'Could not reach server';
-            _generatingApi = false;
+            _generatingApi = true;
+            _generatedSentence = '';
           });
+
+          try {
+            final sentence = await _apiService.generateSentence(words);
+            if (!mounted) return;
+            setState(() {
+              _generatedSentence = sentence;
+              _generatingApi = false;
+            });
+          } catch (e) {
+            if (!mounted) return;
+            setState(() {
+              _generatedSentence = 'Could not reach server';
+              _generatingApi = false;
+            });
+          }
         }
         return;
 
@@ -546,6 +563,28 @@ class _LiveTranslationCard extends StatelessWidget {
                   fontSize: 12,
                   letterSpacing: 1.2,
                 ),
+              ),
+              const SizedBox(width: 8),
+              ValueListenableBuilder<bool>(
+                valueListenable: offlineModeNotifier,
+                builder: (context, offline, _) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: offline ? Colors.orange.withValues(alpha: 0.15) : Colors.green.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      offline ? 'OFFLINE' : 'ONLINE',
+                      style: TextStyle(
+                        color: offline ? Colors.orange : Colors.green,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  );
+                },
               ),
               const Spacer(),
               Container(
