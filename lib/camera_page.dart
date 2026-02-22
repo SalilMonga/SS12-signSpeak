@@ -4,7 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'api_service.dart';
 import 'history_page.dart';
-import 'main.dart' show serverIpNotifier, offlineModeNotifier;
+import 'main.dart' show serverIpNotifier, offlineModeNotifier, sentenceHistory;
 import 'offline_sentence_service.dart';
 import 'settings_page.dart';
 
@@ -77,17 +77,20 @@ class _CameraPageState extends State<CameraPage> {
   }
 
   Future<void> _initTts() async {
-    await _tts.setSharedInstance(true);
-    await _tts.setIosAudioCategory(
-      IosTextToSpeechAudioCategory.playback,
-      [
-        IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
-        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-        IosTextToSpeechAudioCategoryOptions.allowAirPlay,
-        IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
-      ],
-      IosTextToSpeechAudioMode.voicePrompt,
-    );
+    try {
+      await _tts.setSharedInstance(true);
+      await _tts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playAndRecord,
+        [
+          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+        ],
+        IosTextToSpeechAudioMode.voicePrompt,
+      );
+    } catch (e) {
+      debugPrint('TTS audio category setup failed: $e');
+    }
     await _tts.setLanguage('en-US');
     await _tts.setSpeechRate(0.5);
     await _tts.setPitch(1.0);
@@ -163,6 +166,7 @@ class _CameraPageState extends State<CameraPage> {
             _generatedSentence = sentence;
             _generatingApi = false;
           });
+          sentenceHistory.add(sentence, offline: true);
           _speakSentence(sentence);
         } else {
           // Online: Ollama API (async)
@@ -178,6 +182,7 @@ class _CameraPageState extends State<CameraPage> {
               _generatedSentence = sentence;
               _generatingApi = false;
             });
+            sentenceHistory.add(sentence, offline: false);
             _speakSentence(sentence);
           } catch (e) {
             if (!mounted) return;

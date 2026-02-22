@@ -25,4 +25,20 @@ class ApiService {
       throw Exception('Server error ${response.statusCode}: ${response.body}');
     }
   }
+
+  Future<String> summarizeSentences(List<String> sentences) async {
+    final uri = Uri.parse('$baseUrl/summarize');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'sentences': sentences}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return data['summary'] as String;
+    } else {
+      throw Exception('Server error ${response.statusCode}: ${response.body}');
+    }
+  }
 }
