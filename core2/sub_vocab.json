@@ -1,0 +1,17 @@
+{
+  "apple": 0,
+  "camera": 1,
+  "community": 2,
+  "deaf": 3,
+  "eat": 4,
+  "happy": 5,
+  "hello": 6,
+  "help": 7,
+  "how": 8,
+  "i": 9,
+  "please": 10,
+  "sign": 11,
+  "thanks": 12,
+  "want": 13,
+  "you": 14
+}
