@@ -20,6 +20,9 @@ final class HandLandmarkerService: NSObject {
 
   // label map (loads once)
   private lazy var id2label: [Int: String] = loadId2Label()
+    
+    // iOS -> Flutter: we’ll call this every time we produce a word
+    var onWord: ((String) -> Void)?
 
   // Call this once on app start (or when user opens camera screen)
   func start() {
@@ -217,6 +220,7 @@ final class HandLandmarkerService: NSObject {
         let prob = probs.indices.contains(best.index) ? probs[best.index] : 0
         let label = id2label[best.index] ?? "unknown(\(best.index))"
         print(String(format: "Prediction -> %@ | prob: %.3f", label, prob))
+          onWord?(label)
       }
 
     } catch {
