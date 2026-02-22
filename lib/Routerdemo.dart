@@ -134,6 +134,9 @@ class _RouterDemoState extends State<RouterDemo> {
         'SNACK': 'a snack',
         'MEAL': 'a meal',
         'COMMUNITY': 'a community',
+        'DEAF': 'deaf',
+        'HAPPY': 'happy',
+        'CAMERA': 'camera',
 
         // Tech / access
         'WIFI': 'Wi-Fi',
