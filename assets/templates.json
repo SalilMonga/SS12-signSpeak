@@ -153,6 +153,11 @@
       "I want to speak with someone.",
       "I want to talk to {NAME}."
     ],
+    "eat": [
+    "I want to eat {NOUN}.",
+    "I eat {NOUN}.",
+    "Please, I want to eat {NOUN}."
+    ],
     "need": [
       "I need {NOUN}.",
       "I need help.",
@@ -175,7 +180,19 @@
       "I need to try again.",
       "I need to start over."
     ],
+    "aboutSign": [
+    "I sign.",
+    "You sign.",
+    "Sign, please.",
+    "I want to sign."
+    ],
+    "happy": [
+    "I am happy.",
+    "Happy!",
+    "Hello — I am happy."
+    ],
     "get": [
+      "How do you {ACTION}",
       "Can I get {NOUN}?",
       "Can I get {NOUN}, please?",
       "I want to get {NOUN}.",
