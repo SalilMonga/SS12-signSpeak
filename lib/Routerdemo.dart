@@ -73,6 +73,7 @@ class _RouterDemoState extends State<RouterDemo> {
         'HELP-DESK': 'the help desk',
         'CUSTOMERSERVICE': 'customer service',
         'CUSTOMER-SERVICE': 'customer service',
+        'COMMUNITY': 'community',
 
         // Airport / transit style
         'GATE': 'the gate',
@@ -132,6 +133,7 @@ class _RouterDemoState extends State<RouterDemo> {
         'FOOD': 'food',
         'SNACK': 'a snack',
         'MEAL': 'a meal',
+        'COMMUNITY': 'a community',
 
         // Tech / access
         'WIFI': 'Wi-Fi',
