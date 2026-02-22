@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
+import 'test_page.dart';
 
 const _mpChannel = MethodChannel('mediapipe_hands');
 
@@ -30,11 +31,63 @@ class _CameraPageState extends State<CameraPage> {
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
 
+  // 👇 NEW: live “best guess” coming from iOS
+  String _bestGuess = 'no hands detected';
+  int _handsCount = 0;
+
   @override
   void initState() {
     super.initState();
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
+
+    // 👇 NEW: listen for iOS -> Flutter updates
+    _mpChannel.setMethodCallHandler(_onNativeMessage);
+
     _initCamera();
+  }
+
+  // 👇 NEW: handle iOS callbacks
+  Future<void> _onNativeMessage(MethodCall call) async {
+    switch (call.method) {
+      case 'onWord':
+        // expects: { "word": "apple" } OR just "apple"
+        String next = 'no hands detected';
+        final args = call.arguments;
+
+        if (args is String) {
+          next = args;
+        } else if (args is Map) {
+          final w = args['word'];
+          if (w is String) next = w;
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _bestGuess = next.isEmpty ? 'no hands detected' : next;
+        });
+        return;
+
+      case 'onHands':
+        // optional: expects { "count": 0/1/2 } OR just int
+        int c = 0;
+        final args = call.arguments;
+        if (args is int) {
+          c = args;
+        } else if (args is Map) {
+          final v = args['count'];
+          if (v is int) c = v;
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _handsCount = c;
+          if (c == 0) _bestGuess = 'no hands detected';
+        });
+        return;
+
+      default:
+        return;
+    }
   }
 
   Future<void> _initCamera() async {
@@ -117,40 +170,40 @@ class _CameraPageState extends State<CameraPage> {
   }
 
   bool get _isFrontCamera =>
-      _cameras.isNotEmpty &&
-      _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+      _cameras.isNotEmpty && _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
 
   Future<void> _toggleFlash() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    HapticFeedback.lightImpact();
+    if (_controller == null) return;
+    if (_isFrontCamera) return; // no flash on most front cams
 
-    if (_isFrontCamera) {
-      // Front camera has no torch — toggle screen glow instead
-      setState(() => _flashOn = !_flashOn);
-      // Max out screen brightness when glow is on
-      if (_flashOn) {
-        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
-      } else {
-        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
-      }
-    } else {
-      final newMode = _flashOn ? FlashMode.off : FlashMode.torch;
-      await _controller!.setFlashMode(newMode);
-      setState(() => _flashOn = !_flashOn);
+    HapticFeedback.lightImpact();
+    _flashOn = !_flashOn;
+    try {
+      await _controller!.setFlashMode(_flashOn ? FlashMode.torch : FlashMode.off);
+      if (!mounted) return;
+      setState(() {});
+    } catch (_) {
+      // ignore
     }
   }
 
-  Future<void> _setZoom(double level) async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    final clamped = level.clamp(_minZoom, _maxZoom);
-    await _controller!.setZoomLevel(clamped);
+  Future<void> _setZoom(double zoom) async {
+    if (_controller == null) return;
     HapticFeedback.selectionClick();
-    setState(() => _currentZoom = clamped);
+    final z = zoom.clamp(_minZoom, _maxZoom);
+    _currentZoom = z;
+    try {
+      await _controller!.setZoomLevel(z);
+      if (!mounted) return;
+      setState(() {});
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _controller?.dispose();
+    // (optional) stop listening
+    _mpChannel.setMethodCallHandler(null);
     super.dispose();
   }
 
@@ -158,118 +211,121 @@ class _CameraPageState extends State<CameraPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _hasError
-          ? _buildError()
-          : (_controller == null || !_controller!.value.isInitialized)
-          ? const Center(child: CircularProgressIndicator())
-          : _buildCameraStack(),
+      body: _buildBody(context),
     );
   }
 
-  Widget _buildError() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              _errorMessage,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16, color: Colors.white),
-            ),
-          ],
+  Widget _buildBody(BuildContext context) {
+    if (_hasError) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(
+                _errorMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.white),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildCameraStack() {
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Full-screen camera preview
         _CameraPreview(controller: _controller!),
 
-        // Front-camera "flash" — uniform white overlay to boost screen brightness
-        if (_isFrontCamera && _flashOn)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: ColoredBox(
-                color: Colors.white.withValues(alpha: 0.35),
-              ),
-            ),
-          ),
-
-        // Live Translation Card (top)
-        const Positioned(
-          top: 10,
-          left: 0,
-          right: 0,
+        // Top overlay card (✅ constrained so it won't fill the screen)
+        Align(
+          alignment: Alignment.topCenter,
           child: SafeArea(
             bottom: false,
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: _LiveTranslationCard(),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxHeight: 160, // 👈 tweak this number if you want it taller/shorter
+                ),
+                child: _LiveTranslationCard(
+                  bestGuess: _bestGuess,
+                  handsCount: _handsCount,
+                ),
+              ),
             ),
           ),
         ),
 
-        // Detection frame overlay (centered)
-        Center(
-          child: SizedBox(
-            width: 250,
-            height: 250,
-            child: CustomPaint(painter: _DetectionFramePainter()),
-          ),
-        ),
-
-        // Bottom control bar + camera switch
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
+        // Bottom controls (kept as-is)
+        Align(
+          alignment: Alignment.bottomCenter,
           child: SafeArea(
             top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Zoom selector — back camera only
-                if (!_isFrontCamera)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _ZoomSelector(
-                      currentZoom: _currentZoom,
-                      minZoom: _minZoom,
-                      maxZoom: _maxZoom,
-                      onZoomSelected: _setZoom,
-                    ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _CircleIconButton(
+                    icon: Icons.history,
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HistoryPage()),
+                      );
+                    },
                   ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24),
-                  child: _BottomControlBar(),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _CameraSwitchButton(
-                      onPressed: _switchCamera,
-                      isFront: _isFrontCamera,
-                    ),
-                    const SizedBox(width: 24),
-                    _FlashButton(
-                      onPressed: _toggleFlash,
-                      isOn: _flashOn,
-                      isFrontCamera: _isFrontCamera,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
+                  const SizedBox(width: 20),
+                  _CircleIconButton(
+                    icon: Icons.cameraswitch,
+                    onPressed: _switchCamera,
+                  ),
+                  const SizedBox(width: 20),
+                  _CircleIconButton(
+                    icon: Icons.settings,
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsPage()),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
+          ),
+        ),
+
+        // Zoom selector (if back camera)
+        if (!_isFrontCamera)
+          Positioned(
+            right: 16,
+            top: 160,
+            child: _ZoomSelector(
+              currentZoom: _currentZoom,
+              minZoom: _minZoom,
+              maxZoom: _maxZoom,
+              onZoomSelected: _setZoom,
+            ),
+          ),
+
+        // Flash toggle
+        Positioned(
+          left: 16,
+          bottom: 96,
+          child: _FlashButton(
+            onPressed: _toggleFlash,
+            isOn: _flashOn,
+            isFrontCamera: _isFrontCamera,
           ),
         ),
       ],
@@ -312,10 +368,19 @@ class _CameraPreview extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _LiveTranslationCard extends StatelessWidget {
-  const _LiveTranslationCard();
+  final String bestGuess;
+  final int handsCount;
+
+  const _LiveTranslationCard({
+    required this.bestGuess,
+    required this.handsCount,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final hasHands = handsCount > 0;
+    final display = bestGuess.isEmpty ? 'no hands detected' : bestGuess;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -333,11 +398,10 @@ class _LiveTranslationCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header row
           Row(
             children: [
               const Text(
-                'LIVE TRANSLATION',
+                'LIVE GUESS',
                 style: TextStyle(
                   color: _kPrimaryBlue,
                   fontWeight: FontWeight.w800,
@@ -349,73 +413,38 @@ class _LiveTranslationCard extends StatelessWidget {
               Container(
                 width: 8,
                 height: 8,
-                decoration: const BoxDecoration(
-                  color: _kPrimaryBlue,
+                decoration: BoxDecoration(
+                  color: hasHands ? _kPrimaryBlue : Colors.grey.shade400,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 6),
               Text(
-                'Processing...',
+                hasHands ? 'Seeing hands' : 'No hands',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
               ),
             ],
           ),
           const SizedBox(height: 12),
 
-          // Translated text placeholder
-          const Text(
-            'Hello, how can I help you today?',
-            style: TextStyle(
+          Text(
+            display,
+            style: const TextStyle(
               color: Colors.black87,
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              height: 1.3,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              height: 1.2,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-
-          // Detection status row
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 12,
-                backgroundColor: _kPrimaryBlue,
-                child: Icon(Icons.check, size: 14, color: Colors.white),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Hand detected',
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  border: Border.all(color: _kPrimaryBlue, width: 1.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  '98% CONFIDENCE',
-                  style: TextStyle(
-                    color: _kPrimaryBlue,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            hasHands ? 'hands: $handsCount' : 'show your hands to start',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -424,56 +453,70 @@ class _LiveTranslationCard extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// _DetectionFramePainter — four blue corner brackets
+// Buttons / controls (unchanged)
 // ---------------------------------------------------------------------------
 
-class _DetectionFramePainter extends CustomPainter {
+class _CircleIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  const _CircleIconButton({required this.icon, required this.onPressed});
+
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = _kPrimaryBlue
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
-    const double len = 30;
-
-    // Top-left
-    canvas.drawLine(Offset.zero, Offset(len, 0), paint);
-    canvas.drawLine(Offset.zero, Offset(0, len), paint);
-
-    // Top-right
-    canvas.drawLine(Offset(size.width, 0), Offset(size.width - len, 0), paint);
-    canvas.drawLine(Offset(size.width, 0), Offset(size.width, len), paint);
-
-    // Bottom-left
-    canvas.drawLine(Offset(0, size.height), Offset(len, size.height), paint);
-    canvas.drawLine(
-      Offset(0, size.height),
-      Offset(0, size.height - len),
-      paint,
-    );
-
-    // Bottom-right
-    canvas.drawLine(
-      Offset(size.width, size.height),
-      Offset(size.width - len, size.height),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(size.width, size.height),
-      Offset(size.width, size.height - len),
-      paint,
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.45),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Icon(icon, color: Colors.white, size: 22),
+        ),
+      ),
     );
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ---------------------------------------------------------------------------
-// _ZoomSelector — 0.5x / 1x / 2x pill toggle (back camera only)
-// ---------------------------------------------------------------------------
+class _FlashButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  final bool isOn;
+  final bool isFrontCamera;
+
+  const _FlashButton({
+    required this.onPressed,
+    required this.isOn,
+    required this.isFrontCamera,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isFrontCamera) return const SizedBox.shrink();
+    return Material(
+      color: Colors.black.withValues(alpha: 0.45),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(isOn ? Icons.flash_on : Icons.flash_off, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(
+                isOn ? 'Flash On' : 'Flash Off',
+                style: const TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _ZoomSelector extends StatelessWidget {
   final double currentZoom;
@@ -494,7 +537,6 @@ class _ZoomSelector extends StatelessWidget {
         .where((z) => z >= minZoom && z <= maxZoom)
         .toList();
 
-    // Always include 1.0 if the range covers it
     if (!options.contains(1.0) && minZoom <= 1.0 && maxZoom >= 1.0) {
       options.add(1.0);
       options.sort();
@@ -508,31 +550,25 @@ class _ZoomSelector extends StatelessWidget {
         color: Colors.black.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(24),
       ),
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: options.map((zoom) {
           final isSelected = (currentZoom - zoom).abs() < 0.05;
-          final label = zoom == 0.5
-              ? '.5x'
-              : '${zoom.toStringAsFixed(0)}x';
+          final label = zoom == 0.5 ? '.5x' : '${zoom.toStringAsFixed(0)}x';
           return GestureDetector(
             onTap: () => onZoomSelected(zoom),
             child: Container(
-              width: 40,
-              height: 40,
+              margin: const EdgeInsets.symmetric(vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected
-                    ? Colors.white.withValues(alpha: 0.25)
-                    : Colors.transparent,
-                shape: BoxShape.circle,
+                color: isSelected ? _kPrimaryBlue : Colors.transparent,
+                borderRadius: BorderRadius.circular(18),
               ),
-              alignment: Alignment.center,
               child: Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? _kPrimaryBlue : Colors.white,
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: Colors.white,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
             ),
@@ -584,6 +620,19 @@ class _BottomControlBarState extends State<_BottomControlBar> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HistoryPage()),
+              );
+            },
+          ),
+
+          // Test API
+          _BarIconLabel(
+            icon: Icons.science_outlined,
+            label: 'Test API',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TestPage()),
               );
             },
           ),
