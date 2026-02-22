@@ -53,29 +53,107 @@ final class ASLRouter {
 
     // 2) Expanded places (vocabulary)
     let places: [String: String] = [
-        "BATHROOM": "the restroom", "RESTROOM": "the restroom", "TOILET": "the restroom",
-        "EXIT": "the exit", "ENTRANCE": "the entrance",
-        "FRONTDESK": "the front desk", "FRONT-DESK": "the front desk", "DESK": "the front desk", "RECEPTION": "reception",
-        "ELEVATOR": "the elevator", "LIFT": "the elevator",
-        "STAIRS": "the stairs", "LOBBY": "the lobby", "HALL": "the hallway", "HALLWAY": "the hallway",
-        "OFFICE": "the office", "ROOM": "the room", "BUILDING": "the building",
-        "SECURITY": "security", "INFORMATION": "information", "INFO": "information", "HELPDESK": "the help desk", "HELP-DESK": "the help desk",
-        "CLINIC": "the clinic", "HOSPITAL": "the hospital", "PHARMACY": "the pharmacy", "ER": "the emergency room",
-        "PARKING": "parking", "GARAGE": "the parking garage",
-        "BUS": "the bus stop", "TRAIN": "the train station", "STATION": "the station",
-        "GATE": "the gate", "TERMINAL": "the terminal",
-        "CAFE": "the cafe", "CAFETERIA": "the cafeteria", "RESTAURANT": "the restaurant"
+    // Bathrooms
+    "BATHROOM": "the restroom", "RESTROOM": "the restroom", "TOILET": "the restroom",
+    "WASHROOM": "the restroom", "MEN": "the men's restroom", "WOMEN": "the women's restroom",
+
+    // Entry/exit/navigation
+    "EXIT": "the exit", "ENTRANCE": "the entrance", "DOOR": "the door",
+    "LOBBY": "the lobby", "HALL": "the hallway", "HALLWAY": "the hallway",
+    "FLOOR": "this floor", "UPSTAIRS": "upstairs", "DOWNSTAIRS": "downstairs",
+
+    // Desks / support
+    "FRONTDESK": "the front desk", "FRONT-DESK": "the front desk", "DESK": "the front desk",
+    "RECEPTION": "reception", "CHECKIN": "check-in", "CHECK-IN": "check-in",
+    "INFORMATION": "information", "INFO": "information",
+    "HELPDESK": "the help desk", "HELP-DESK": "the help desk", "CUSTOMERSERVICE": "customer service",
+    "CUSTOMER-SERVICE": "customer service",
+
+    // Movement
+    "ELEVATOR": "the elevator", "LIFT": "the elevator",
+    "STAIRS": "the stairs", "STAIR": "the stairs", "ESCALATOR": "the escalator",
+
+    // Rooms / buildings
+    "OFFICE": "the office", "ROOM": "the room", "BUILDING": "the building",
+    "WAITING": "the waiting area", "WAITINGROOM": "the waiting room", "WAITING-ROOM": "the waiting room",
+    "CONFERENCE": "the conference room", "MEETING": "the meeting room",
+
+    // Security / safety
+    "SECURITY": "security", "POLICE": "police", "GUARD": "security",
+    "FIRSTAID": "first aid", "FIRST-AID": "first aid",
+
+    // Medical
+    "CLINIC": "the clinic", "HOSPITAL": "the hospital", "PHARMACY": "the pharmacy",
+    "ER": "the emergency room", "EMERGENCY": "the emergency room",
+    "LAB": "the lab", "XRAY": "X-ray", "X-RAY": "X-ray",
+    "RADIOLOGY": "radiology", "IMAGING": "imaging",
+
+    // Transport / travel
+    "PARKING": "parking", "GARAGE": "the parking garage", "LOT": "the parking lot",
+    "BUS": "the bus stop", "BUSSTOP": "the bus stop", "BUS-STOP": "the bus stop",
+    "TRAIN": "the train station", "STATION": "the station", "SUBWAY": "the subway",
+    "GATE": "the gate", "TERMINAL": "the terminal", "BAGGAGE": "baggage claim",
+    "BAGGAGECLAIM": "baggage claim", "BAGGAGE-CLAIM": "baggage claim",
+    "TSA": "security screening", "SECURITYCHECK": "security screening", "SECURITY-CHECK": "security screening",
+    "WORLD": "the world"
+
+    // Food / amenities
+    "CAFE": "the cafe", "CAFETERIA": "the cafeteria", "RESTAURANT": "the restaurant",
+    "FOODCOURT": "the food court", "FOOD-COURT": "the food court",
+    "VENDING": "the vending machines",
+
+    // Facilities
+    "ATM": "the ATM", "BANK": "the bank",
+    "ELECTRICAL": "electrical", "MAINTENANCE": "maintenance",
+    "LOSTFOUND": "lost and found", "LOST-FOUND": "lost and found",
+    "RESTAREA": "the rest area", "REST-AREA": "the rest area",
+
+    // Education / campus-ish (optional)
+    "CLASS": "the classroom", "CLASSROOM": "the classroom", "LECTURE": "the lecture hall",
+    "LIBRARY": "the library", "STUDENTCENTER": "the student center", "STUDENT-CENTER": "the student center"
     ]
 
     // 3) Expanded nouns (things/services)
     let nouns: [String: String] = [
-        "APPLE": "apple", "BANANA": "banana", "WATER": "water", "FOOD": "food", "DRINK": "a drink",
-        "WIFI": "Wi-Fi", "INTERNET": "internet", "PASSWORD": "the password",
-        "CHARGER": "a charger", "PHONE": "my phone", "LAPTOP": "my laptop",
-        "TICKET": "a ticket", "RECEIPT": "a receipt", "FORM": "a form", "ID": "my ID", "WALLET": "my wallet", "BAG": "my bag",
-        "HELP": "help", "ASSISTANCE": "assistance",
-        "INTERPRETER": "an ASL interpreter", "TRANSLATOR": "a translator", "CAPTIONS": "captions",
-        "DOCTOR": "a doctor", "NURSE": "a nurse", "MEDICINE": "medicine"
+    // Food/drink (common)
+    "APPLE": "apple", "BANANA": "banana", "ORANGE": "orange", "GRAPES": "grapes",
+    "WATER": "water", "JUICE": "juice", "SODA": "soda", "COFFEE": "coffee", "TEA": "tea",
+    "FOOD": "food", "SNACK": "a snack",
+
+    // Tech / access
+    "WIFI": "Wi-Fi", "WI-FI": "Wi-Fi", "INTERNET": "internet",
+    "PASSWORD": "the password", "LOGIN": "login", "ACCOUNT": "my account",
+    "CHARGER": "a charger", "CHARGE": "charging", "CABLE": "a cable",
+    "PHONE": "my phone", "CELL": "my phone", "MOBILE": "my phone",
+    "LAPTOP": "my laptop", "COMPUTER": "a computer", "TABLET": "a tablet",
+    "APP": "the app", "EMAIL": "email", "TEXT": "a text message", 
+    "KEYS": "keys", "ROCK": "rock"
+
+    // Admin / docs / payments
+    "TICKET": "a ticket", "PASS": "a pass", "RESERVATION": "a reservation",
+    "RECEIPT": "a receipt", "REFUND": "a refund",
+    "FORM": "a form", "PAPER": "paperwork", "DOCUMENT": "a document",
+    "ID": "my ID", "LICENSE": "my ID", "PASSPORT": "my passport",
+    "CARD": "my card", "CREDIT": "a credit card", "DEBIT": "a debit card",
+    "CASH": "cash", "MONEY": "money", "PAYMENT": "a payment", "PRICE": "the price", "COST": "the cost",
+
+    // Personal items
+    "WALLET": "my wallet", "BAG": "my bag", "BACKPACK": "my backpack", "PURSE": "my purse",
+    "KEY": "my key", "KEYS": "my keys", "WATCH": "my watch", "GLASSES": "my glasses",
+
+    // Help / communication
+    "HELP": "help", "ASSISTANCE": "assistance", "SUPPORT": "support",
+    "INTERPRETER": "an ASL interpreter", "TRANSLATOR": "a translator",
+    "CAPTIONS": "captions", "CAPTION": "captions",
+
+    // Medical
+    "DOCTOR": "a doctor", "NURSE": "a nurse", "MEDICINE": "medicine",
+    "PAIN": "pain", "HEADACHE": "a headache", "NAUSEA": "nausea",
+    "ALLERGY": "an allergy", "INSURANCE": "insurance",
+
+    // Transportation
+    "RIDE": "a ride", "TAXI": "a taxi", "UBER": "an Uber", "LYFT": "a Lyft",
+    "BUS": "the bus", "TRAIN": "the train"
     ]
 
     // Words that should not be treated as content
