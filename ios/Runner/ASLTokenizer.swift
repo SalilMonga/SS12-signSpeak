@@ -47,7 +47,12 @@ final class ASLTokenizer {
     stableFramesRequired: Int = 3,
     noHandsEndRequired: Int = 8
   ) {
-    self.endpointURL = URL(string: endpoint)!
+    if let url = URL(string: endpoint) {
+      self.endpointURL = url
+    } else {
+      assertionFailure("Invalid endpoint URL string: \(endpoint). Falling back to default endpoint.")
+      self.endpointURL = URL(string: "http://localhost:8000/generate")!
+    }
     self.stableFramesRequired = stableFramesRequired
     self.noHandsEndRequired = noHandsEndRequired
   }
