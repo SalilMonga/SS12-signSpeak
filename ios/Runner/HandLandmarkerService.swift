@@ -23,6 +23,13 @@ final class HandLandmarkerService: NSObject {
     
     // iOS -> Flutter: we’ll call this every time we produce a word
     var onWord: ((String) -> Void)?
+    
+    // Sends deduped, stable words to FastAPI when "no hands" persists long enough
+    private let tokenizer = ASLTokenizer(
+      endpoint: "http://10.40.159.124:8000/generate",
+      stableFramesRequired: 3,
+      noHandsEndRequired: 8
+    )
 
   // Call this once on app start (or when user opens camera screen)
   func start() {
@@ -221,6 +228,7 @@ final class HandLandmarkerService: NSObject {
         let label = id2label[best.index] ?? "unknown(\(best.index))"
         print(String(format: "Prediction -> %@ | prob: %.3f", label, prob))
           onWord?(label)
+          tokenizer.ingest(word: label)
       }
 
     } catch {
@@ -245,6 +253,14 @@ extension HandLandmarkerService: HandLandmarkerLiveStreamDelegate {
 
     print("hands:", result.landmarks.count, "t=", timestampInMilliseconds)
 
+    // ✅ If no hands detected, notify tokenizer + UI and stop here
+    if result.landmarks.isEmpty {
+      tokenizer.ingest(word: "no hands detected")
+      onWord?("no hands detected")
+      return
+    }
+
+    // Normal case (we have at least one hand)
     let frame126 = build126(from: result)
 
     bufferQueue.async { [weak self] in
@@ -259,7 +275,6 @@ extension HandLandmarkerService: HandLandmarkerLiveStreamDelegate {
         let snapshot = self.frameBuffer
         let t = timestampInMilliseconds
 
-        // run model off this queue so we don't stall landmark processing
         DispatchQueue.global(qos: .userInitiated).async {
           self.runCoreML(on: snapshot)
         }

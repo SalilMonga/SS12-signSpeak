@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -19,6 +19,7 @@
 		FB6FE2B72F49B93A0054060D /* TemporalHandNetRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6FE2B62F49B9320054060D /* TemporalHandNetRunner.swift */; };
 		FB6FE2CB2F49BF440054060D /* HandLandmarkerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6FE2CA2F49BF330054060D /* HandLandmarkerService.swift */; };
 		FB6FE2CD2F49C22E0054060D /* NativeCameraStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6FE2CC2F49C2270054060D /* NativeCameraStream.swift */; };
+		FB6FE31E2F4A959B0054060D /* ASLTokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6FE31D2F4A959B0054060D /* ASLTokenizer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,10 +72,11 @@
 		FB6FE2B62F49B9320054060D /* TemporalHandNetRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemporalHandNetRunner.swift; sourceTree = "<group>"; };
 		FB6FE2CA2F49BF330054060D /* HandLandmarkerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandLandmarkerService.swift; sourceTree = "<group>"; };
 		FB6FE2CC2F49C2270054060D /* NativeCameraStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCameraStream.swift; sourceTree = "<group>"; };
+		FB6FE31D2F4A959B0054060D /* ASLTokenizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASLTokenizer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		FB6FE28F2F49ABAE0054060D /* Exceptions for "Resources" folder in "Runner" target */ = {
+		FB6FE28F2F49ABAE0054060D /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				hand_landmarker.task,
@@ -88,18 +90,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		FB6FE28C2F49AB7A0054060D /* Resources */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				FB6FE28F2F49ABAE0054060D /* Exceptions for "Resources" folder in "Runner" target */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = Resources;
-			sourceTree = "<group>";
-		};
+		FB6FE28C2F49AB7A0054060D /* Resources */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (FB6FE28F2F49ABAE0054060D /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Resources; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -179,6 +170,7 @@
 		97C146F01CF9000F007C117D /* Runner */ = {
 			isa = PBXGroup;
 			children = (
+				FB6FE31D2F4A959B0054060D /* ASLTokenizer.swift */,
 				FB6FE2CC2F49C2270054060D /* NativeCameraStream.swift */,
 				FB6FE2CA2F49BF330054060D /* HandLandmarkerService.swift */,
 				FB6FE2B62F49B9320054060D /* TemporalHandNetRunner.swift */,
@@ -369,9 +361,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -419,6 +415,7 @@
 				FB6FE2CD2F49C22E0054060D /* NativeCameraStream.swift in Sources */,
 				FB6FE2B72F49B93A0054060D /* TemporalHandNetRunner.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
+				FB6FE31E2F4A959B0054060D /* ASLTokenizer.swift in Sources */,
 				FB6FE2CB2F49BF440054060D /* HandLandmarkerService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -512,7 +509,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 2446Y4SZ9J;
+				DEVELOPMENT_TEAM = P57WT3P5G3;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
@@ -520,7 +517,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.salilmonga.signSpeak;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ryanhakimi.signSpeak;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -696,7 +693,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 2446Y4SZ9J;
+				DEVELOPMENT_TEAM = P57WT3P5G3;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
@@ -704,7 +701,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.salilmonga.signSpeak;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ryanhakimi.signSpeak;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -720,7 +717,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 2446Y4SZ9J;
+				DEVELOPMENT_TEAM = P57WT3P5G3;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
@@ -728,7 +725,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.salilmonga.signSpeak;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ryanhakimi.signSpeak;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
