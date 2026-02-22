@@ -74,6 +74,13 @@ import CoreVideo
 
     let ch = FlutterMethodChannel(name: "mediapipe_hands", binaryMessenger: registrar.messenger())
     self.channel = ch
+      
+      // iOS -> Flutter: push the latest label up to Dart
+      handService.onWord = { [weak self] word in
+        DispatchQueue.main.async {
+          self?.channel?.invokeMethod("onWord", arguments: ["word": word])
+        }
+      }
 
     ch.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
       guard let self else { return }

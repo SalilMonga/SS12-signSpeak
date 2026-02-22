@@ -9,7 +9,7 @@ Input:
            wrist-relative; missing hands are zero-padded.
 
 Output:
-  logits: (1, 3) float32 (apply softmax on-device)
+  logits: (1, 15) float32 (apply softmax on-device)
   predicted_index = argmax(logits)
   index->label mapping: id2label.json
 
