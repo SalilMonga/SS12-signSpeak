@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'test_page.dart';
 
 const Color _kPrimaryBlue = Color(0xFF3B5BFE);
 
@@ -87,6 +88,17 @@ class _SettingsPageState extends State<SettingsPage> {
             _buildDarkModeToggle(),
             _buildDivider(),
             _buildTextSizeSlider(),
+          ]),
+
+          _buildSectionHeader('Developer'),
+          _buildCard([
+            _buildActionTile('Test API', Icons.science_outlined, () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TestPage()),
+              );
+            }),
           ]),
 
           _buildSectionHeader('About'),
