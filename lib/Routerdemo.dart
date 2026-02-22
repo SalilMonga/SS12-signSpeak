@@ -221,13 +221,17 @@ class _RouterDemoState extends State<RouterDemo> {
     debugPrint('Templates initialized (Dart)');
   }
 
-  void _runRouter() {
+  void _tokenizer(){
     final tokens = _controller.text
         .trim()
         .split(RegExp(r'\s+'))
         .where((w) => w.isNotEmpty)
         .map((w) => w.toUpperCase())
         .toList();
+    _runRouter(tokens);
+  }
+
+  void _runRouter(List<String> tokens) {
 
     //Actually processing words and converting them to sentences
     final intentKey = router.detectIntentKey(tokens);
@@ -239,7 +243,7 @@ class _RouterDemoState extends State<RouterDemo> {
     debugPrint('Intent: $intentKey slots=$slots sentence=$sentence');
   }
 
-  @override
+  @override 
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -265,11 +269,11 @@ class _RouterDemoState extends State<RouterDemo> {
                 border: OutlineInputBorder(),
               ),
               textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _runRouter(),
+              onSubmitted: (_) => _tokenizer(),
             ),
             const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: _initialized ? _runRouter : null,
+              onPressed: _initialized ? _tokenizer : null,
               child: const Text('Run'),
             ),
             const SizedBox(height: 12),
