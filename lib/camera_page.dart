@@ -4,7 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'api_service.dart';
 import 'history_page.dart';
-import 'main.dart' show serverIpNotifier, offlineModeNotifier, sentenceHistory;
+import 'main.dart' show serverIpNotifier, offlineModeNotifier, sentenceHistory, speechOnNotifier, speechSpeedNotifier;
 import 'offline_sentence_service.dart';
 import 'settings_page.dart';
 
@@ -48,7 +48,6 @@ class _CameraPageState extends State<CameraPage> {
 
   // TTS
   late final FlutterTts _tts;
-  bool _speechOn = true;
 
   @override
   void initState() {
@@ -66,6 +65,9 @@ class _CameraPageState extends State<CameraPage> {
     _apiService.updateIp(serverIpNotifier.value);
     serverIpNotifier.addListener(_onServerIpChanged);
 
+    // Keep TTS speed in sync with global setting
+    speechSpeedNotifier.addListener(_onSpeechSpeedChanged);
+
     // Listen for iOS -> Flutter updates
     _mpChannel.setMethodCallHandler(_onNativeMessage);
 
@@ -74,6 +76,10 @@ class _CameraPageState extends State<CameraPage> {
 
   void _onServerIpChanged() {
     _apiService.updateIp(serverIpNotifier.value);
+  }
+
+  void _onSpeechSpeedChanged() {
+    _tts.setSpeechRate(speechSpeedNotifier.value);
   }
 
   Future<void> _initTts() async {
@@ -98,7 +104,7 @@ class _CameraPageState extends State<CameraPage> {
   }
 
   Future<void> _speakSentence(String sentence) async {
-    if (!_speechOn || sentence.isEmpty) return;
+    if (!speechOnNotifier.value || sentence.isEmpty) return;
     await _tts.stop();
     await _tts.speak(sentence);
   }
@@ -208,6 +214,14 @@ class _CameraPageState extends State<CameraPage> {
         _errorMessage = 'No cameras found on this device.';
       });
       return;
+    }
+
+    // Default to front camera on first init
+    if (_controller == null) {
+      final frontIdx = _cameras.indexWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+      );
+      if (frontIdx != -1) _cameraIndex = frontIdx;
     }
 
     final previousController = _controller;
@@ -357,6 +371,7 @@ class _CameraPageState extends State<CameraPage> {
   @override
   void dispose() {
     _tts.stop();
+    speechSpeedNotifier.removeListener(_onSpeechSpeedChanged);
     serverIpNotifier.removeListener(_onServerIpChanged);
     _controller?.dispose();
     _mpChannel.setMethodCallHandler(null);
@@ -433,14 +448,19 @@ class _CameraPageState extends State<CameraPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // White pill bar: History | Speech On | Settings
-                  _BottomControlBar(
-                    onPause: _pauseForNavigation,
-                    onResume: _resumeAfterNavigation,
-                    speechOn: _speechOn,
-                    onSpeechToggle: () {
-                      HapticFeedback.lightImpact();
-                      setState(() => _speechOn = !_speechOn);
-                      if (!_speechOn) _tts.stop();
+                  ValueListenableBuilder<bool>(
+                    valueListenable: speechOnNotifier,
+                    builder: (context, speechOn, _) {
+                      return _BottomControlBar(
+                        onPause: _pauseForNavigation,
+                        onResume: _resumeAfterNavigation,
+                        speechOn: speechOn,
+                        onSpeechToggle: () {
+                          HapticFeedback.lightImpact();
+                          speechOnNotifier.value = !speechOnNotifier.value;
+                          if (!speechOnNotifier.value) _tts.stop();
+                        },
+                      );
                     },
                   ),
                   const SizedBox(height: 12),
@@ -892,7 +912,23 @@ class _BottomControlBar extends StatelessWidget {
               onPause?.call();
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const HistoryPage()),
+                PageRouteBuilder(
+                  pageBuilder: (_, animation, secondaryAnimation) => const HistoryPage(),
+                  transitionsBuilder: (_, animation, secondaryAnimation, child) {
+                    return SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(-1, 0),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      )),
+                      child: child,
+                    );
+                  },
+                  transitionDuration: const Duration(milliseconds: 300),
+                  reverseTransitionDuration: const Duration(milliseconds: 250),
+                ),
               );
               onResume?.call();
             },
@@ -974,7 +1010,7 @@ class _SecondaryButton extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.grey.shade600,
+              color: Colors.white.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: Colors.white, size: 22),

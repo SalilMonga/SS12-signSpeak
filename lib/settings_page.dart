@@ -1,6 +1,7 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'main.dart' show themeNotifier, serverIpNotifier, offlineModeNotifier;
+import 'main.dart' show themeNotifier, serverIpNotifier, offlineModeNotifier, speechOnNotifier, speechSpeedNotifier;
 import 'test_page.dart';
 import 'speech_page.dart';
 import 'Routerdemo.dart';
@@ -23,10 +24,6 @@ class _SettingsPageState extends State<SettingsPage> {
   String _outputLanguage = 'English';
   double _confidenceThreshold = 0.80;
   bool _continuousMode = true;
-
-  // Speech
-  bool _autoSpeak = true;
-  double _speechSpeed = 1.0;
 
   // Camera
   bool _useFrontCamera = false;
@@ -76,8 +73,7 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          _buildSectionHeader('Translation'),
-          _buildCard([
+          _buildProSection('Translation', [
             _buildLanguageDropdown(),
             _buildDivider(),
             _buildConfidenceSlider(),
@@ -92,18 +88,17 @@ class _SettingsPageState extends State<SettingsPage> {
             _buildSpeechSpeedSlider(),
           ]),
 
-          _buildSectionHeader('Camera'),
-          _buildCard([
-            _buildCameraToggle(),
-            _buildDivider(),
-            _buildResolutionSelector(),
-          ]),
-
           _buildSectionHeader('Appearance'),
           _buildCard([
             _buildDarkModeToggle(),
             _buildDivider(),
             _buildTextSizeSlider(),
+          ]),
+
+          _buildProSection('Camera', [
+            _buildCameraToggle(),
+            _buildDivider(),
+            _buildResolutionSelector(),
           ]),
 
           _buildSectionHeader('Server'),
@@ -248,6 +243,119 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   // ---------------------------------------------------------------------------
+  // Pro section — blurred card with lock overlay
+  // ---------------------------------------------------------------------------
+
+  Widget _buildProSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+          child: Row(
+            children: [
+              Text(
+                title.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade500,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _kPrimaryBlue.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock, size: 10, color: _kPrimaryBlue),
+                    SizedBox(width: 3),
+                    Text(
+                      'PRO',
+                      style: TextStyle(
+                        color: _kPrimaryBlue,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Stack(
+            children: [
+              // The actual card content (rendered but blurred)
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(children: children),
+              ),
+              // Blur + lock overlay
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor.withValues(alpha: 0.9),
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.lock_outline, size: 18, color: _kPrimaryBlue),
+                              SizedBox(width: 8),
+                              Text(
+                                'Upgrade to Pro',
+                                style: TextStyle(
+                                  color: _kPrimaryBlue,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Translation section
   // ---------------------------------------------------------------------------
 
@@ -310,38 +418,55 @@ class _SettingsPageState extends State<SettingsPage> {
   // ---------------------------------------------------------------------------
 
   Widget _buildAutoSpeakToggle() {
-    return SwitchListTile(
-      title: const Text('Auto-speak'),
-      subtitle: const Text('Read translations aloud automatically'),
-      value: _autoSpeak,
-      activeTrackColor: _kPrimaryBlue,
-      onChanged: (value) {
-        HapticFeedback.lightImpact();
-        setState(() => _autoSpeak = value);
+    return ValueListenableBuilder<bool>(
+      valueListenable: speechOnNotifier,
+      builder: (context, speechOn, _) {
+        return SwitchListTile(
+          title: const Text('Auto-speak'),
+          subtitle: const Text('Read translations aloud automatically'),
+          value: speechOn,
+          activeTrackColor: _kPrimaryBlue,
+          onChanged: (value) {
+            HapticFeedback.lightImpact();
+            speechOnNotifier.value = value;
+            setState(() {});
+          },
+        );
       },
     );
   }
 
   Widget _buildSpeechSpeedSlider() {
-    return ListTile(
-      title: const Text('Speech Speed'),
-      subtitle: Slider(
-        value: _speechSpeed,
-        min: 0.5,
-        max: 2.0,
-        divisions: 6,
-        activeColor: _kPrimaryBlue,
-        label: '${_speechSpeed.toStringAsFixed(1)}x',
-        onChanged: (value) {
-          HapticFeedback.selectionClick();
-          setState(() => _speechSpeed = value);
-        },
-      ),
-      trailing: Text(
-        '${_speechSpeed.toStringAsFixed(1)}x',
-        style: const TextStyle(fontWeight: FontWeight.w600),
-      ),
+    return ValueListenableBuilder<double>(
+      valueListenable: speechSpeedNotifier,
+      builder: (context, speed, _) {
+        return ListTile(
+          title: const Text('Speech Speed'),
+          subtitle: Slider(
+            value: speed,
+            min: 0.1,
+            max: 0.9,
+            divisions: 8,
+            activeColor: _kPrimaryBlue,
+            label: _speedLabel(speed),
+            onChanged: (value) {
+              HapticFeedback.selectionClick();
+              speechSpeedNotifier.value = value;
+            },
+          ),
+          trailing: Text(
+            _speedLabel(speed),
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        );
+      },
     );
+  }
+
+  String _speedLabel(double speed) {
+    if (speed <= 0.3) return 'Slow';
+    if (speed <= 0.6) return 'Normal';
+    return 'Fast';
   }
 
   // ---------------------------------------------------------------------------
@@ -396,16 +521,31 @@ class _SettingsPageState extends State<SettingsPage> {
   // ---------------------------------------------------------------------------
 
   Widget _buildDarkModeToggle() {
-    return SwitchListTile(
-      title: const Text('Dark Mode'),
-      value: themeNotifier.value == ThemeMode.dark,
-      activeTrackColor: _kPrimaryBlue,
-      onChanged: (value) {
-        HapticFeedback.lightImpact();
-        setState(() {
-          themeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
-        });
-      },
+    return ListTile(
+      title: const Text('Theme'),
+      trailing: SegmentedButton<ThemeMode>(
+        segments: const [
+          ButtonSegment(value: ThemeMode.system, label: Text('Auto')),
+          ButtonSegment(value: ThemeMode.light, label: Text('Light')),
+          ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+        ],
+        selected: {themeNotifier.value},
+        onSelectionChanged: (value) {
+          HapticFeedback.selectionClick();
+          setState(() => themeNotifier.value = value.first);
+        },
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) return Colors.white;
+            return Theme.of(context).colorScheme.onSurface;
+          }),
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            return states.contains(WidgetState.selected)
+                ? _kPrimaryBlue
+                : Colors.transparent;
+          }),
+        ),
+      ),
     );
   }
 
