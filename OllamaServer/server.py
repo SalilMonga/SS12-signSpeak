@@ -18,6 +18,9 @@ app.add_middleware(
 class GenerateRequest(BaseModel):
     aslWords: list[str]
 
+class SummarizeRequest(BaseModel):
+    sentences: list[str]
+
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 OLLAMA_MODEL = "llama3"
@@ -88,6 +91,61 @@ def generate_sentence(payload: GenerateRequest):
         "asl": asl,
         "sentence": message,
     }
+
+@app.post("/summarize")
+def summarize_sentences(payload: SummarizeRequest):
+    if not payload.sentences:
+        raise HTTPException(status_code=400, detail="sentences cannot be empty")
+
+    joined = "\n".join(f"- {s}" for s in payload.sentences)
+
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": OLLAMA_MODEL,
+                "stream": False,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a helpful assistant that summarizes conversations.\n"
+                            "You will receive a list of sentences that were translated from ASL sign language.\n"
+                            "Summarize them into one short, clear paragraph that captures what the person was communicating.\n"
+                            "Output ONLY the summary paragraph. No quotes, no explanation, no bullet points."
+                        ),
+                    },
+                    {"role": "user", "content": f"Sentences to summarize:\n{joined}"},
+                ],
+                "options": {
+                    "temperature": 0.3,
+                    "num_predict": 100,
+                },
+            },
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to reach Ollama: {exc}") from exc
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Ollama error {response.status_code}: {response.text}",
+        )
+
+    data = response.json()
+    message = (data.get("message") or {}).get("content", "").strip()
+
+    if not message:
+        raise HTTPException(status_code=502, detail="Ollama returned an empty message")
+
+    if message.startswith('"') and message.endswith('"'):
+        message = message[1:-1].strip()
+    if message.startswith("'") and message.endswith("'"):
+        message = message[1:-1].strip()
+
+    return {"summary": message}
+
 
 if __name__ == "__main__":
     import uvicorn
