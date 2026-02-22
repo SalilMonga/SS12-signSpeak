@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
+import 'test_page.dart';
 
 const _mpChannel = MethodChannel('mediapipe_hands');
 
@@ -573,6 +574,254 @@ class _ZoomSelector extends StatelessWidget {
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _BottomControlBar — floating white pill with History / Speech On / Settings
+// ---------------------------------------------------------------------------
+
+class _BottomControlBar extends StatefulWidget {
+  const _BottomControlBar();
+
+  @override
+  State<_BottomControlBar> createState() => _BottomControlBarState();
+}
+
+class _BottomControlBarState extends State<_BottomControlBar> {
+  bool _speechOn = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // History
+          _BarIconLabel(
+            icon: Icons.history,
+            label: 'History',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const HistoryPage()),
+              );
+            },
+          ),
+
+          // Test API
+          _BarIconLabel(
+            icon: Icons.science_outlined,
+            label: 'Test API',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TestPage()),
+              );
+            },
+          ),
+
+          // Speech toggle pill button
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              setState(() => _speechOn = !_speechOn);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: _speechOn ? _kPrimaryBlue : Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _speechOn ? Icons.volume_up : Icons.volume_off,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _speechOn ? 'SPEECH ON' : 'SPEECH OFF',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Settings
+          _BarIconLabel(
+            icon: Icons.settings,
+            label: 'Settings',
+            onTap: () {
+              HapticFeedback.lightImpact();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsPage()),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BarIconLabel extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _BarIconLabel({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24, color: Colors.grey.shade700),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _FlashButton — small circular button to toggle torch
+// ---------------------------------------------------------------------------
+
+class _FlashButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  final bool isOn;
+  final bool isFrontCamera;
+
+  const _FlashButton({
+    required this.onPressed,
+    required this.isOn,
+    required this.isFrontCamera,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData icon;
+    if (isFrontCamera) {
+      icon = isOn ? Icons.lightbulb : Icons.lightbulb_outline;
+    } else {
+      icon = isOn ? Icons.flash_on : Icons.flash_off;
+    }
+
+    return GestureDetector(
+      onTap: onPressed,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: isOn ? _kPrimaryBlue : Colors.grey.shade300,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 22,
+              color: isOn ? Colors.white : Colors.grey.shade800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            isOn ? 'On' : 'Off',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.white.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _CameraSwitchButton — small circular button below the control bar
+// ---------------------------------------------------------------------------
+
+class _CameraSwitchButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  final bool isFront;
+
+  const _CameraSwitchButton({required this.onPressed, required this.isFront});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.cameraswitch,
+              size: 22,
+              color: Colors.grey.shade800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            isFront ? 'Front' : 'Back',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.white.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
